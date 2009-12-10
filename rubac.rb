@@ -42,6 +42,10 @@
 #   ...
 #   rubac --run
 #
+# == Environment Variables ==
+#
+# RUBAC_DATADIR - set the database directory
+#
 # == Author
 #   Steeve McCauley
 #
@@ -66,7 +70,7 @@ require 'optparse'
 require 'rdoc/usage'
 require 'ostruct'
 require 'date'
-require 'sqlite3'
+require 'rubac_db'
 
 class Rubac
 	VERSION = '0.0.1'
@@ -81,6 +85,13 @@ class Rubac
 		@options = OpenStruct.new
 		@options.global = false
 		@options.profile = "rubac"
+
+		if ENV['RUBAC_DATADIR']
+			@options.data_dir = ENV['RUBAC_DATADIR']
+		else
+			@options.data_dir = "/etc/rubac"
+			ENV['RUBAC_DATADIR'] = @options.data_dir
+		end
 
 		@options.verbose = false
 		@options.quiet = false
@@ -99,10 +110,6 @@ class Rubac
         
 		if arguments_valid? && parsed_options?
 
-		puts "###"
-		puts @options
-		puts "###"
-
 			puts "Start at #{DateTime.now}\n\n" if @options.verbose
 
 			output_options if @options.verbose # [Optional]
@@ -111,6 +118,10 @@ class Rubac
 			process_command
 
 			puts "\nFinished at #{DateTime.now}" if @options.verbose
+
+			puts "###"
+			puts @options
+			puts "###"
 
 		else
 			output_usage
@@ -127,9 +138,14 @@ class Rubac
 		opts.on('-V', '--verbose', "Run verbosely")    { @options.verbose = true }  
 		opts.on('-q', '--quiet',   "Run quietly")      { @options.quiet = true }
 
+		opts.on('-DPATH', '--data_dir PATH', "Database directory") do |dir|
+			@options.data_dir = dir
+		end
+
 		opts.on('-iPATH', '--include PATH', "Add include path") do |inc|
 			@options.include = inc
 		end
+
 		opts.on('-xPATH', '--exclude PATH', "Add exclude path") do |exc|
 			@options.exclude = exc
 		end
@@ -209,4 +225,9 @@ end
 
 rubac = Rubac.new(ARGV, STDIN)
 rubac.burp
+
+db = Rubac_db.new(File.join(ENV['RUBAC_DATADIR'],"szmb.db"))
+db.test
+
+p Dir.glob("*")
 
