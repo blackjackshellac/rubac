@@ -80,6 +80,7 @@ class Rubac
 	def initialize(arguments, stdin)
 		@arguments = arguments
 		@stdin = stdin
+		@revision = "$Rev$"
 			      
 		# Set defaults
 		@options = OpenStruct.new
