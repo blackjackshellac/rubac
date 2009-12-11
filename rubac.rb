@@ -234,6 +234,11 @@ class Rubac
 		db = Rubac_db.new(File.join(@options.data_dir, "szmb.db"))
 		db.test
 
+		@cmd="ls -l /home/rubac/linguini/default"
+		puts @cmd
+		listing=`#{@cmd}`
+		p $?.exitstatus
+		puts listing
 	end
 
 	def process_standard_input
