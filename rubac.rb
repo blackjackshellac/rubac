@@ -10,19 +10,26 @@
 #   For help use: rubac -h
 #
 # == Options
-#   -g, --global          Apply excludes, options etc., to all profiles
-#   -p, --profile[=NAME]  Apply options only to named backup profile (default is rubac)
+#   -G, --global          Apply excludes, options etc., to global profile
+#   -P, --profile[=NAME]  Apply options only to named backup profile (default is rubac)
 #   -D, --data_dir[=PATH] Database directory 
+#
+#   -c, --client[=HOST]   Client to backup (default is local)
 #   -i, --include=PATH    Include path, comma separate multiple paths
 #   -x, --exclude=PATH    Exclude path, comma separate multiple paths
-#   -d, --dest=DEST       Destination path (eg., esme:/mnt/backup)
-#   -m, --mail=EMAIL      Notification email, comma separated
-#   -o, --opts=OPTS       Rsync options
-#   -t, --list            List the includes, excludes, etc., for the named profile
-#   -T, --TMP=PATH        Temporary directory for logging, etc (default is /tmp)
-#   -l, --log[=NAME]      Name of log file, (default is profile.run_date.log)
+#   -d, --dest=DEST       Local destination path (eg., /mnt/backup)
+#   -m, --mail=EMAIL      Notification email, comma separated list
+#   -o, --opts=OPTS       Extra rsync options
+#
+#   -T, --TMP=PATH        Temporary directory for logging, etc (default is /var/log/rubac)
+#   -l, --log[=NAME]      Name of log file, (default is profile.%run_date%.log)
 #   -s, --syslog          Use syslog for logging [??]
-#   -r, --run             Run specified profile
+#
+#   -t, --list            List the includes, excludes, etc., for the named profile
+#   -F, --full            Perform full backup (overwrites rubac.0)
+#   -I, --incremental[=N] Number of incremental backups (default is 5)
+#   -R, --run             Run specified profile
+#
 #   -H, --history         Backup history
 #   -h, --help            Displays help message
 #   -v, --version         Display the version
@@ -33,8 +40,8 @@
 #
 #   Setup and use a default backup
 #
-#   rubac -g -o "--delete-excluded"
-#   rubac -g --data_dir=/etc/rubac
+#   rubac -G -o "--delete-excluded"
+#   rubac -G --data_dir=/etc/rubac
 #   rubac -i "/home/steeve,/home/lissa,/home/etienne" -x "*/.gvfs/"
 #   rubac -x "*/.thumbnails/,*/.thunderbird/*/ImapMail/,*/.beagle/"
 #   rubac -m backupadmin@mail.host
@@ -72,6 +79,10 @@ require 'rdoc/usage'
 require 'ostruct'
 require 'date'
 require 'rubac_db'
+
+#
+# rsync version must be at least 2.5.6 for --link-dest option
+#
 
 class Rubac
 	VERSION = '0.0.1'
@@ -151,13 +162,20 @@ class Rubac
 		opts.on('-xPATH', '--exclude PATH', "Add exclude path") do |exc|
 			@options.exclude = exc
 		end
-		opts.on('-pNAME', '--profile NAME', "Apply opts to specified profile") do |profile|
+		opts.on('-PNAME', '--profile NAME', "Apply opts to specified profile") do |profile|
 			@options.profile = profile
 		end
 		# TO DO - add additional options
 
 		opts.on('-h', '--help',    "Print help") do   #   { output_help }
 			output_help
+		end
+
+		opts.on('-r', '--run', "Run the backup") do
+			@cmd="run"
+		end
+		opts.on('-t', '--list', "List the backup options") do
+			@cmd="list"
 		end
 
 		puts "###"
@@ -212,6 +230,10 @@ class Rubac
 		# TO DO - do whatever this app does
 
 		#process_standard_input # [Optional]
+
+		db = Rubac_db.new(File.join(@options.data_dir, "szmb.db"))
+		db.test
+
 	end
 
 	def process_standard_input
@@ -227,9 +249,6 @@ end
 
 rubac = Rubac.new(ARGV, STDIN)
 rubac.burp
-
-db = Rubac_db.new(File.join(ENV['RUBAC_DATADIR'],"szmb.db"))
-db.test
 
 p Dir.glob("*")
 
