@@ -1,0 +1,40 @@
+#
+# rsync version must be at least 2.5.6 for --link-dest option
+#
+# rm -rf rubac.3
+# mv rubac.2 rubac.3
+# mv rubac.1 rubac.2
+# mv rubac.0 rubac.1
+# rsync -av --relative --delete --delete-excluded --link-dest=/home/rubac/linguini/default/rubac.1 /home/etienne /home/rubac/linguini/default/rubac.0
+#
+# Latest full backup is in /DEST/HOST/PROFILE/rubac.0
+# Incrementals are in /DEST/HOST/PROFILE/rubac.[1-n]
+# Yearly incremental in /DEST/HOST/PROFILE/rubac.%year%
+# Monthly incremental in /DEST/HOST/PROFILE/rubac.%month%
+#
+# Examples,
+#
+# Do first time full backup to rubac.0
+#   rsync -av --relative --delete --delete-excluded HOST:/SRC /DEST/HOST/PROFILE/rubac.0
+#
+# Do yearly backup to rubac.2009 from full backup rubac.0
+#   mv /DEST/HOST/PROFILE/rubac.0 /DEST/HOST/PROFILE/rubac.2009
+#   rsync -av --relative --delete --delete-excluded --link-dest=/DEST/HOST/PROFILE/rubac.2009 HOST:/SRC /DEST/HOST/PROFILE/rubac.0
+#
+# Do numbered incremental n=5
+#   rm -rf /DEST/HOST/PROFILE/rubac.5
+#   mv /DEST/HOST/PROFILE/rubac.4 /DEST/HOST/PROFILE/rubac.5
+#   mv /DEST/HOST/PROFILE/rubac.3 /DEST/HOST/PROFILE/rubac.4
+#   mv /DEST/HOST/PROFILE/rubac.2 /DEST/HOST/PROFILE/rubac.3
+#   mv /DEST/HOST/PROFILE/rubac.1 /DEST/HOST/PROFILE/rubac.2
+#   mv /DEST/HOST/PROFILE/rubac.0 /DEST/HOST/PROFILE/rubac.1
+#   rsync -av --relative --delete --delete-excluded --link-dest=/DEST/HOST/PROFILE/rubac.1 HOST:/SRC /DEST/HOST/PROFILE/rubac.0
+#
+# Do named incremental snapshot
+#
+#   rm -rf /DEST/HOST/PROFILE/rubac.snapshot
+#   mv /DEST/HOST/PROFILE/rubac.0 /DEST/HOST/PROFILE/rubac.snapshot
+#   rsync -av --relative --delete --delete-excluded --link-dest=/DEST/HOST/PROFILE/rubac.snapshot HOST:/SRC /DEST/HOST/PROFILE/rubac.0
+#   
+
+
