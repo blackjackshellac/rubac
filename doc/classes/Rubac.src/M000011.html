@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html 
+     PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html>
+<head>
+  <title>process_command (Rubac)</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+  <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
+</head>
+<body class="standalone-code">
+  <pre><span class="ruby-comment cmt"># File rubac.rb, line 229</span>
+        <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">process_command</span>
+                <span class="ruby-comment cmt"># TO DO - do whatever this app does</span>
+
+                <span class="ruby-comment cmt">#process_standard_input # [Optional]</span>
+
+                <span class="ruby-identifier">db</span> = <span class="ruby-constant">Rubac_db</span>.<span class="ruby-identifier">new</span>(<span class="ruby-constant">File</span>.<span class="ruby-identifier">join</span>(<span class="ruby-ivar">@options</span>.<span class="ruby-identifier">data_dir</span>, <span class="ruby-value str">&quot;szmb.db&quot;</span>))
+                <span class="ruby-identifier">db</span>.<span class="ruby-identifier">test</span>
+
+                <span class="ruby-ivar">@cmd</span>=<span class="ruby-value str">&quot;ls -l /home/rubac/linguini/default&quot;</span>
+                <span class="ruby-identifier">puts</span> <span class="ruby-ivar">@cmd</span>
+                <span class="ruby-identifier">listing</span>=<span class="ruby-node">`#{@cmd}`</span>
+                <span class="ruby-identifier">p</span> <span class="ruby-identifier">$?</span>.<span class="ruby-identifier">exitstatus</span>
+                <span class="ruby-identifier">puts</span> <span class="ruby-identifier">listing</span>
+        <span class="ruby-keyword kw">end</span></pre>
+</body>
+</html>

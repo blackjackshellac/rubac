@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html 
+     PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html>
+<head>
+  <title>new (Rubac_db)</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+  <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
+</head>
+<body class="standalone-code">
+  <pre><span class="ruby-comment cmt"># File rubac_db.rb, line 35</span>
+        <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">initialize</span>(<span class="ruby-identifier">dbpath</span>)
+                <span class="ruby-ivar">@db_version</span> = <span class="ruby-constant">Hash</span>[ <span class="ruby-value str">&quot;major&quot;</span>, <span class="ruby-value str">&quot;0&quot;</span>, <span class="ruby-value str">&quot;minor&quot;</span>, <span class="ruby-value str">&quot;2&quot;</span> ]
+                <span class="ruby-identifier">puts</span> <span class="ruby-value str">&quot;major=&quot;</span> <span class="ruby-operator">+</span> <span class="ruby-ivar">@db_version</span>[<span class="ruby-value str">'major'</span>]
+                <span class="ruby-identifier">puts</span> <span class="ruby-value str">&quot;minor=&quot;</span> <span class="ruby-operator">+</span> <span class="ruby-ivar">@db_version</span>[<span class="ruby-value str">'minor'</span>]
+
+                <span class="ruby-ivar">@dbpath</span>=<span class="ruby-identifier">dbpath</span>
+                <span class="ruby-keyword kw">begin</span>
+                        <span class="ruby-identifier">puts</span> <span class="ruby-node">&quot;Initializing #{@dbpath}&quot;</span>
+                        <span class="ruby-ivar">@db</span> = <span class="ruby-constant">SQLite3</span><span class="ruby-operator">::</span><span class="ruby-constant">Database</span>.<span class="ruby-identifier">new</span>( <span class="ruby-ivar">@dbpath</span> )
+                <span class="ruby-keyword kw">rescue</span>
+                        <span class="ruby-identifier">puts</span> <span class="ruby-node">&quot;Failed to initialize #{@db}&quot;</span>
+                <span class="ruby-keyword kw">end</span>
+
+                <span class="ruby-identifier">create_globals</span> <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-identifier">table_exists?</span>(<span class="ruby-value str">&quot;globals&quot;</span>)
+                <span class="ruby-identifier">create_includes</span> <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-identifier">table_exists?</span>(<span class="ruby-value str">&quot;includes&quot;</span>)
+                <span class="ruby-identifier">create_excludes</span> <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-identifier">table_exists?</span>(<span class="ruby-value str">&quot;excludes&quot;</span>)
+
+                <span class="ruby-ivar">@globals</span> = <span class="ruby-identifier">select_all</span>(<span class="ruby-value str">&quot;globals&quot;</span>)
+                <span class="ruby-identifier">p</span> <span class="ruby-ivar">@globals</span>
+                <span class="ruby-ivar">@excludes</span> = <span class="ruby-identifier">select_all</span>(<span class="ruby-value str">&quot;excludes&quot;</span>)
+                <span class="ruby-identifier">p</span> <span class="ruby-ivar">@excludes</span>
+                <span class="ruby-ivar">@includes</span> = <span class="ruby-identifier">select_all</span>(<span class="ruby-value str">&quot;includes&quot;</span>)
+                <span class="ruby-identifier">p</span> <span class="ruby-ivar">@includes</span>
+        <span class="ruby-keyword kw">end</span></pre>
+</body>
+</html>

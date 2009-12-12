@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html 
+     PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html>
+<head>
+  <title>new (Rubac)</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+  <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
+</head>
+<body class="standalone-code">
+  <pre><span class="ruby-comment cmt"># File rubac.rb, line 92</span>
+        <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">initialize</span>(<span class="ruby-identifier">arguments</span>, <span class="ruby-identifier">stdin</span>)
+                <span class="ruby-ivar">@arguments</span> = <span class="ruby-identifier">arguments</span>
+                <span class="ruby-ivar">@stdin</span> = <span class="ruby-identifier">stdin</span>
+                <span class="ruby-ivar">@revision</span> = <span class="ruby-value str">&quot;$Rev: 20 $&quot;</span>
+                              
+                <span class="ruby-comment cmt"># Set defaults</span>
+                <span class="ruby-ivar">@options</span> = <span class="ruby-constant">OpenStruct</span>.<span class="ruby-identifier">new</span>
+                <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">global</span> = <span class="ruby-keyword kw">false</span>
+                <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">profile</span> = <span class="ruby-value str">&quot;rubac&quot;</span>
+
+                <span class="ruby-keyword kw">if</span> <span class="ruby-constant">ENV</span>[<span class="ruby-value str">'RUBAC_DATADIR'</span>]
+                        <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">data_dir</span> = <span class="ruby-constant">ENV</span>[<span class="ruby-value str">'RUBAC_DATADIR'</span>]
+                <span class="ruby-keyword kw">else</span>
+                        <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">data_dir</span> = <span class="ruby-value str">&quot;/etc/rubac&quot;</span>
+                        <span class="ruby-constant">ENV</span>[<span class="ruby-value str">'RUBAC_DATADIR'</span>] = <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">data_dir</span>
+                <span class="ruby-keyword kw">end</span>
+
+                <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">verbose</span> = <span class="ruby-keyword kw">false</span>
+                <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">quiet</span> = <span class="ruby-keyword kw">false</span>
+                <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">include</span> = <span class="ruby-value str">&quot;&quot;</span>
+                <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">exclude</span> = <span class="ruby-value str">&quot;&quot;</span>
+                <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">opts</span> = <span class="ruby-value str">&quot;&quot;</span>
+                <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">run</span> = <span class="ruby-keyword kw">false</span>
+
+                <span class="ruby-comment cmt">#</span>
+                <span class="ruby-comment cmt"># TODO - add additional defaults end</span>
+                <span class="ruby-comment cmt">#</span>
+        <span class="ruby-keyword kw">end</span></pre>
+</body>
+</html>

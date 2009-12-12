@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html 
+     PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html>
+<head>
+  <title>test (Rubac_db)</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+  <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
+</head>
+<body class="standalone-code">
+  <pre><span class="ruby-comment cmt"># File rubac_db.rb, line 140</span>
+        <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">test</span>
+
+                <span class="ruby-identifier">puts</span> <span class="ruby-value str">&quot;Feck&quot;</span> <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-identifier">table_exists?</span>(<span class="ruby-value str">&quot;noincludes&quot;</span>)
+
+                <span class="ruby-keyword kw">begin</span>
+                        <span class="ruby-ivar">@db</span>.<span class="ruby-identifier">execute</span>( <span class="ruby-value str">&quot;select * from includes&quot;</span> ) <span class="ruby-keyword kw">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">row</span><span class="ruby-operator">|</span>
+                                <span class="ruby-identifier">p</span> <span class="ruby-node">&quot;path=#{row[0]}, opts=#{row[1]}&quot;</span>
+                        <span class="ruby-keyword kw">end</span>
+                <span class="ruby-keyword kw">rescue</span> <span class="ruby-constant">SQLite3</span><span class="ruby-operator">::</span><span class="ruby-constant">SQLException</span>
+                        <span class="ruby-identifier">puts</span> <span class="ruby-value str">&quot;Invalid SQL&quot;</span>
+                <span class="ruby-keyword kw">end</span>
+
+                <span class="ruby-ivar">@db</span>.<span class="ruby-identifier">execute</span>( <span class="ruby-value str">&quot;select * from excludes&quot;</span> ) <span class="ruby-keyword kw">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">row</span><span class="ruby-operator">|</span>
+                        <span class="ruby-identifier">p</span> <span class="ruby-identifier">row</span>
+                <span class="ruby-keyword kw">end</span>
+
+                <span class="ruby-ivar">@db</span>.<span class="ruby-identifier">close</span>
+
+        <span class="ruby-keyword kw">end</span></pre>
+</body>
+</html>
