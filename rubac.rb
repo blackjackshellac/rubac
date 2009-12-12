@@ -223,7 +223,7 @@ class Rubac
 	end
     
 	def output_version
-		puts "#{File.basename(__FILE__)} version #{VERSION}"
+		puts "#{File.basename(__FILE__, ".rb")} version #{VERSION}"
 	end
     
 	def process_command

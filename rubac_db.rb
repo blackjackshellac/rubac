@@ -1,46 +1,11 @@
 #!/usr/bin/ruby
 #
 # == Synopsis 
-#   A simple backup program for ruby powered by rsync that can save
-#   multiple backup profiles between uses.
+#   
+#   Database class for the rubac backup program to store backup
+#   profiles, options, globals, etc.
 #
-# == Usage 
-#   rubac [options]
-#
-#   For help use: rubac -h
-#
-# == Options
-#   -g, --global          Apply excludes, options etc., to all profiles
-#   -p, --profile[=NAME]  Apply options only to named backup profile (default is rubac)
-#   -D, --data_dir[=PATH] Database directory 
-#   -i, --include=PATH    Include path, comma separate multiple paths
-#   -x, --exclude=PATH    Exclude path, comma separate multiple paths
-#   -d, --dest=DEST       Destination path (eg., esme:/mnt/backup)
-#   -m, --mail=EMAIL      Notification email, comma separated
-#   -o, --opts=OPTS       Rsync options
-#   -t, --list            List the includes, excludes, etc., for the named profile
-#   -T, --TMP=PATH        Temporary directory for logging, etc (default is /tmp)
-#   -l, --log[=NAME]      Name of log file, (default is profile.run_date.log)
-#   -s, --syslog          Use syslog for logging [??]
-#   -r, --run             Run specified profile
-#   -H, --history         Backup history
-#   -h, --help            Displays help message
-#   -v, --version         Display the version
-#   -q, --quiet           Output as little as possible, overrides verbose
-#   -V, --verbose         Verbose output
-#
-# == Examples
-#
-#   Setup and use a default backup
-#
-#   rubac -g -o "--delete-excluded"
-#   rubac -g --data_dir=/etc/rubac
-#   rubac -i "/home/steeve,/home/lissa,/home/etienne" -x "*/.gvfs/"
-#   rubac -x "*/.thumbnails/,*/.thunderbird/*/ImapMail/,*/.beagle/"
-#   rubac -m backupadmin@mail.host
-#   rubac -l /var/log/rubac
-#   ...
-#   rubac --run
+# == 
 #
 # == Author
 #   Steeve McCauley
@@ -117,6 +82,9 @@ class Rubac_db
 		end
 	end
 
+	#
+	# Create the specified table with the sql provided
+	#
 	def batch_create(sql, table)
 		puts "Creating table \"#{table}\" with \"#{sql}\""
 		begin
