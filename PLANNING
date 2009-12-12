@@ -36,5 +36,35 @@
 #   mv /DEST/HOST/PROFILE/rubac.0 /DEST/HOST/PROFILE/rubac.snapshot
 #   rsync -av --relative --delete --delete-excluded --link-dest=/DEST/HOST/PROFILE/rubac.snapshot HOST:/SRC /DEST/HOST/PROFILE/rubac.0
 #   
-
+#
+### Failed backups
+#
+# ** 1 - Don't delete the oldest incremental before finishing all of the moves
+# ** 2 - Backup to a temporary directory for the duration of the backup, move it
+# **     into place when the backup is finished.
+#
+# mv /DEST/HOST/PROFILE/rubac.4 /DEST/HOST/PROFILE/rubac.remove
+# mv /DEST/HOST/PROFILE/rubac.3 /DEST/HOST/PROFILE/rubac.4
+# mv /DEST/HOST/PROFILE/rubac.2 /DEST/HOST/PROFILE/rubac.3
+# mv /DEST/HOST/PROFILE/rubac.1 /DEST/HOST/PROFILE/rubac.2
+# mv /DEST/HOST/PROFILE/rubac.0 /DEST/HOST/PROFILE/rubac.1
+# rsync -av --relative --delete --delete-excluded --link-dest=/DEST/HOST/PROFILE/rubac.1 HOST:/SRC /DEST/HOST/PROFILE/rubac.0.incomplete
+# if $?.exitstatus != 0
+#    # restore the previous backup
+#    rm -rf /DEST/HOST/PROFILE/rubac.0.incomplete
+#    mv /DEST/HOST/PROFILE/rubac.1 /DEST/HOST/PROFILE/rubac.0
+#    mv /DEST/HOST/PROFILE/rubac.2 /DEST/HOST/PROFILE/rubac.1
+#    mv /DEST/HOST/PROFILE/rubac.3 /DEST/HOST/PROFILE/rubac.2
+#    mv /DEST/HOST/PROFILE/rubac.4 /DEST/HOST/PROFILE/rubac.3
+#    mv /DEST/HOST/PROFILE/rubac.remove /DEST/HOST/PROFILE/rubac.4
+# else
+#    /DEST/HOST/PROFILE/rubac.0.incomplete /DEST/HOST/PROFILE/rubac.0
+#    rm -rf /DEST/HOST/PROFILE/rubac.remove
+# end
+#
+# ** 3 - Trap signals to cleanup an incomplete backup.
+#
+# See Signal.trap("TERM") { puts "caught TERM" } or Signal.list
+#   - for starters probably want to trap TERM, INT and HUP
+#
 
