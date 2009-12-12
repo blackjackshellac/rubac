@@ -239,6 +239,19 @@ class Rubac
 		listing=`#{@cmd}`
 		p $?.exitstatus
 		puts listing
+
+		# if exists /DEST/HOST/PROFILE/rubac.4 move it to /DEST/HOST/PROFILE/rubac.5
+		# if exists /DEST/HOST/PROFILE/rubac.3 move it to /DEST/HOST/PROFILE/rubac.4
+		# if exists /DEST/HOST/PROFILE/rubac.2 move it to /DEST/HOST/PROFILE/rubac.3
+		# if exists /DEST/HOST/PROFILE/rubac.1 move it to /DEST/HOST/PROFILE/rubac.2
+		# if exists /DEST/HOST/PROFILE/rubac.0 move it to /DEST/HOST/PROFILE/rubac.1
+		# backup to /DEST/HOST/PROFILE/rubac.0
+		a=[]
+		a=(1..5).to_a.reverse
+		a.each do |y|
+			x = y-1
+			puts "mv /DEST/HOST/PROFILE/rubac.#{x} /DEST/HOST/PROFILE/rubac.#{y}"
+		end
 	end
 
 	def process_standard_input
