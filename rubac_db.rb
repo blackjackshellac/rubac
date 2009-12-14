@@ -29,13 +29,43 @@
 # $Id$
 
 require 'sqlite3'
+require 'pp'
 
 class Rubac_db
 
 	def initialize(dbname)
-		@db_version = Hash[ "major", "0", "minor", "2" ]
-		puts "major=" + @db_version['major']
-		puts "minor=" + @db_version['minor']
+
+		# define globals hash
+		@globals = Array.new
+		@globals << { 
+			'major_vers' => "major_vers",
+			'minor_vers' => "minor_vers",
+			'revision' => "revision",
+			'client' => "client",
+			'opts' => "opts"
+		}
+		@globals << {
+			'major_vers' => "0",
+			'minor_vers' => "3",
+			'revision' => "$Rev$",
+			'client' => "localhost",
+			'opts' => ""
+		}
+
+		# first array element is the table column name
+		# if client is nil, use global client
+		@includes = Array.new
+		@includes << { 'client' => "client", 'path' => "path", 'opts' => "opts", 'excludes' => "excludes" }
+		@includes << { 'client' => nil, 'path' => "/home/etienne", 'opts' => "--delete", 'excludes' => '*/.gvfs/' }
+
+		# these excludes are global ...
+		@excludes = Array.new
+		@excludes << { 'client' => "client", 'path' => "path" }
+		@excludes << { 'client' => nil, 'path' => '*/.mozilla/**/Cache/' }
+
+		pp ( @globals )
+		pp ( @includes )
+		pp ( @excludes )
 
 		@dbname=dbname
 		begin
@@ -53,12 +83,6 @@ class Rubac_db
 			create_globals if not table_exists?("globals")
 			create_includes if not table_exists?("includes")
 			create_excludes if not table_exists?("excludes")
-			@globals = select_all("globals")
-			p @globals
-			@excludes = select_all("excludes")
-			p @excludes
-			@includes = select_all("includes")
-			p @includes
 		end
 
 	end
@@ -112,9 +136,9 @@ class Rubac_db
 			client TEXT,
 			opts   TEXT
 		);
-		insert into globals (major_vers, minor_vers) values ( #{@db_version["major"]}, #{@db_version["minor"]} );
-		insert into globals (client) values ("localhost");
-		insert into globals (opts)   values ("");
+		insert into globals (major_vers, minor_vers, client, opts)
+			values (#{@globals["major_vers"]},#{@globals["minor_vers"]},
+				"localhost", "" );
 SQL
 		batch_create(sql, "globals")
 	end
@@ -142,8 +166,18 @@ SQL
 		batch_create(sql, "includes")
 	end
 
+	#
+	# Update the given table column with the specified value
+	#
+	# update
+	#   * table - the table to be updated
+	#   * column - the column in the table to be updated
+	#   * value - the value to be updated
+	#
+	# bool success/fail
+	# 
 	def update(table, column, value)
-		sql = "update #{table} set #{column}=#{value};"
+		sql = "update #{table} set #{column}='#{value}';"
 		begin
 			@db.execute(sql)
 		rescue
@@ -152,6 +186,16 @@ SQL
 		end
 	end
 
+	#
+	# Insert the given values into the specified columns in the table
+	#
+	# insert
+	#    * table - the table to be inserted
+	#    * columns - the comma delimited list of columsn to be inserted
+	#    * values - the comma delimited list of values to be inserted
+	#
+	# bool success/fail
+	#
 	def insert(table, columns, values)
 		sql = "insert into #{table} (#{columns}) values #{values};"
 		begin
@@ -164,7 +208,9 @@ SQL
 
 	def test
 
-		puts "Feck" if not table_exists?("noincludes")
+		@db.execute( "select * from globals;" ) do |row|
+			p row
+		end
 
 		begin
 			@db.execute( "select * from includes" ) do |row|
