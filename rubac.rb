@@ -81,7 +81,7 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-# $Id$
+# $Id: rubac.rb 35 2009-12-14 17:10:21Z steeve $
 
 require 'optparse' 
 require 'rdoc/usage'

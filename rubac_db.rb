@@ -26,7 +26,7 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-# $Id$
+# $Id: rubac_db.rb 36 2009-12-14 17:11:06Z steeve $
 
 require 'sqlite3'
 require 'pp'
