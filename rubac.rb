@@ -14,7 +14,7 @@
 #   -P, --profile[=NAME]  Apply options only to named backup profile (default is rubac)
 #   -D, --data_dir[=PATH] Database directory 
 #
-#   -c, --client[=HOST]   Client to backup (default is local)
+#   -c, --client[=HOST]   Client to backup (default is local backup)
 #   -i, --include=PATH    Include path, comma separate multiple paths
 #   -x, --exclude=PATH    Exclude path, comma separate multiple paths
 #   -d, --dest=DEST       Local destination path (eg., /mnt/backup)
@@ -28,6 +28,7 @@
 #   -t, --list            List the includes, excludes, etc., for the named profile
 #   -F, --full            Perform full backup (overwrites rubac.0)
 #   -I, --incremental[=N] Number of incremental backups (default is 5)
+#   -n, --dry-run         Run a trial run of the backup
 #   -R, --run             Run specified profile
 #
 #   -H, --history         Backup history
@@ -48,6 +49,14 @@
 #   rubac -l /var/log/rubac
 #   ...
 #   rubac --run
+#
+#   Should one be able to specify a client using rsync notation,
+#
+#   rubac -c donkey -i "/home/steeve,/home/lissa,/home/etienne" -x "*/.gvfs/"
+#   rubac -i "donkey:/home/steeve,donkey:/home/lissa,donkey:/home/etienne"
+#
+#   Each include path should probably include a client (unless local) so
+#   the host should be part of the includes database table.
 #
 # == Environment Variables ==
 #
@@ -240,6 +249,10 @@ class Rubac
 		p $?.exitstatus
 		puts listing
 
+		# DEST is the backup directory
+		# HOST is the client (localhost or `hostname -s` is considered local)
+		# PROFILE is the name of the profile
+		#
 		# if exists /DEST/HOST/PROFILE/rubac.4 move it to /DEST/HOST/PROFILE/rubac.5
 		# if exists /DEST/HOST/PROFILE/rubac.3 move it to /DEST/HOST/PROFILE/rubac.4
 		# if exists /DEST/HOST/PROFILE/rubac.2 move it to /DEST/HOST/PROFILE/rubac.3
