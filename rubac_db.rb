@@ -32,29 +32,35 @@ require 'sqlite3'
 
 class Rubac_db
 
-	def initialize(dbpath)
+	def initialize(dbname)
 		@db_version = Hash[ "major", "0", "minor", "2" ]
 		puts "major=" + @db_version['major']
 		puts "minor=" + @db_version['minor']
 
-		@dbpath=dbpath
+		@dbname=dbname
 		begin
-			puts "Initializing #{@dbpath}"
-			@db = SQLite3::Database.new( @dbpath )
+			puts "Initializing #{@dbname}"
+			@db = SQLite3::Database.new( @dbname )
 		rescue
 			puts "Failed to initialize #{@db}"
 		end
 
-		create_globals if not table_exists?("globals")
-		create_includes if not table_exists?("includes")
-		create_excludes if not table_exists?("excludes")
+		if not File.exist?(@dbname)
+			create_globals
+			create_includes
+			create_excludes
+		else
+			create_globals if not table_exists?("globals")
+			create_includes if not table_exists?("includes")
+			create_excludes if not table_exists?("excludes")
+			@globals = select_all("globals")
+			p @globals
+			@excludes = select_all("excludes")
+			p @excludes
+			@includes = select_all("includes")
+			p @includes
+		end
 
-		@globals = select_all("globals")
-		p @globals
-		@excludes = select_all("excludes")
-		p @excludes
-		@includes = select_all("includes")
-		p @includes
 	end
 
 	def select_all(table)
@@ -102,20 +108,21 @@ class Rubac_db
 		sql = <<SQL
 		create table globals (
 			major_vers INTEGER,
-			minor_vers INTEGER
+			minor_vers INTEGER,
+			client TEXT,
+			opts   TEXT
 		);
-		insert into globals ( #{@db_version["major"]}, #{@db_version["minor"]} );
+		insert into globals (major_vers, minor_vers) values ( #{@db_version["major"]}, #{@db_version["minor"]} );
+		insert into globals (client) values ("localhost");
+		insert into globals (opts)   values ("");
 SQL
 		batch_create(sql, "globals")
-
-		@db.execute("drop table globals;")
-
-		#sql = "insert into globals ( " + @db_version['major'] + "," + @db_version['minor'] + " );"
 	end
 
 	def create_excludes
 		sql = <<SQL
 		create table excludes (
+			client TEXT,
 			path TEXT
 		);
 
@@ -126,12 +133,33 @@ SQL
 	def create_includes
 		sql = <<SQL
 		create table includes (
+			client TEXT,
 			path TEXT, 
 			opts TEXT
 		);
 
 SQL
 		batch_create(sql, "includes")
+	end
+
+	def update(table, column, value)
+		sql = "update #{table} set #{column}=#{value};"
+		begin
+			@db.execute(sql)
+		rescue
+			puts "Error: sql failure #{sql}"
+			false
+		end
+	end
+
+	def insert(table, columns, values)
+		sql = "insert into #{table} (#{columns}) values #{values};"
+		begin
+			@db.execute(sql)
+		rescue
+			puts "Error: sql failure #{sql}"
+			false
+		end
 	end
 
 	def test

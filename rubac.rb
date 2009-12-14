@@ -106,12 +106,27 @@ class Rubac
 		# Set defaults
 		@options = OpenStruct.new
 		@options.global = false
-		@options.profile = "rubac"
+		@options.profile = "default"
+		@options.dbname = ""
+		
+		begin
+			@options.client = Socket.gethostname
+		rescue
+			@options.client = "localhost"
+		end
 
+		# 
+		# If /etc/rubac is writable use it as default, otherwise use
+		# $HOME/.rubac/
+		#
 		if ENV['RUBAC_DATADIR']
 			@options.data_dir = ENV['RUBAC_DATADIR']
 		else
-			@options.data_dir = "/etc/rubac"
+			if File.writable?("/etc/rubac")
+				@options.data_dir = "/etc/rubac"
+			else
+				@options.data_dir = ""
+			end
 			ENV['RUBAC_DATADIR'] = @options.data_dir
 		end
 
@@ -160,6 +175,10 @@ class Rubac
 		opts.on('-V', '--verbose', "Run verbosely")    { @options.verbose = true }  
 		opts.on('-q', '--quiet',   "Run quietly")      { @options.quiet = true }
 
+		opts.on('-cHOST', '--client HOST', "Backup Client hostname") do |host|
+			@options.client = host
+		end
+
 		opts.on('-DPATH', '--data_dir PATH', "Database directory") do |dir|
 			@options.data_dir = dir
 		end
@@ -200,6 +219,7 @@ class Rubac
 	# Performs post-parse processing on options
 	def process_options
 		@options.verbose = false if @options.quiet
+		@options.dbname = File.join(@options.data_dir, @options.profile + ".db");
 	end
 
 	def output_options
@@ -240,7 +260,7 @@ class Rubac
 
 		#process_standard_input # [Optional]
 
-		db = Rubac_db.new(File.join(@options.data_dir, "szmb.db"))
+		db = Rubac_db.new(@options.dbname);
 		db.test
 
 		@cmd="ls -l /home/rubac/linguini/default"
