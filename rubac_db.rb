@@ -38,30 +38,30 @@ class Rubac_db
 		# define globals hash
 		@globals = Array.new
 		@globals << { 
-			'major_vers' => "major_vers",
-			'minor_vers' => "minor_vers",
-			'revision' => "revision",
-			'client' => "client",
-			'opts' => "opts"
+			:major_vers => "major_vers",
+			:minor_vers => "minor_vers",
+			:revision => "revision",
+			:client => "client",
+			:opts => "opts"
 		}
 		@globals << {
-			'major_vers' => "0",
-			'minor_vers' => "3",
-			'revision' => "$Rev$",
-			'client' => "localhost",
-			'opts' => ""
+			:major_vers => "0",
+			:minor_vers => "3",
+			:revision => "$Rev$",
+			:client => "localhost",
+			:opts => ""
 		}
 
 		# first array element is the table column name
 		# if client is nil, use global client
 		@includes = Array.new
-		@includes << { 'client' => "client", 'path' => "path", 'opts' => "opts", 'excludes' => "excludes" }
-		@includes << { 'client' => nil, 'path' => "/home/etienne", 'opts' => "--delete", 'excludes' => '*/.gvfs/' }
+		@includes << { :client => "client", :path => "path", :opts => "opts", :excludes => "excludes" }
+		@includes << { :client => nil, :path => "/home/etienne", :opts => "--delete", :excludes => '*/.gvfs/' }
 
 		# these excludes are global ...
 		@excludes = Array.new
-		@excludes << { 'client' => "client", 'path' => "path" }
-		@excludes << { 'client' => nil, 'path' => '*/.mozilla/**/Cache/' }
+		@excludes << { :client => "client", :path => "path" }
+		@excludes << { :client => nil, :path => '*/.mozilla/**/Cache/' }
 
 		pp ( @globals )
 		pp ( @includes )
