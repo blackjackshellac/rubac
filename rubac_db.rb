@@ -47,7 +47,7 @@ class Rubac_db
 		@globals << {
 			:major_vers => "0",
 			:minor_vers => "3",
-			:revision => "$Rev$",
+			:revision => "$Rev$"[6..-3],
 			:client => "localhost",
 			:opts => ""
 		}
