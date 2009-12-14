@@ -87,6 +87,8 @@ require 'optparse'
 require 'rdoc/usage'
 require 'ostruct'
 require 'date'
+require 'socket'
+
 require 'rubac_db'
 
 #
@@ -270,6 +272,7 @@ class Rubac
 		#process_standard_input # [Optional]
 
 		db = Rubac_db.new(@options.dbname);
+		db.update("globals", "client", @options.client)
 		db.test
 
 		@cmd="ls -l /home/rubac/linguini/default"
