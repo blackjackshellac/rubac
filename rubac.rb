@@ -81,7 +81,7 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-# $Id: rubac.rb 35 2009-12-14 17:10:21Z steeve $
+# $Id$
 
 require 'optparse' 
 require 'rdoc/usage'
@@ -103,7 +103,7 @@ class Rubac
 	def initialize(arguments, stdin)
 		@arguments = arguments
 		@stdin = stdin
-		@revision = "$Rev: 20 $"
+		@revision = "$Rev$"
 			      
 		# Set defaults
 		@options = OpenStruct.new
