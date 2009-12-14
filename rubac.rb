@@ -117,7 +117,7 @@ class Rubac
 
 		# 
 		# If /etc/rubac is writable use it as default, otherwise use
-		# $HOME/.rubac/
+		# ~/.rubac/ (does this work for windoze?)
 		#
 		if ENV['RUBAC_DATADIR']
 			@options.data_dir = ENV['RUBAC_DATADIR']
@@ -125,9 +125,18 @@ class Rubac
 			if File.writable?("/etc/rubac")
 				@options.data_dir = "/etc/rubac"
 			else
-				@options.data_dir = ""
+				@options.data_dir = File.expand_path("~") + "/.rubac"
 			end
 			ENV['RUBAC_DATADIR'] = @options.data_dir
+
+			puts "Data directory is #{@options.data_dir}"
+		end
+
+		begin
+			FileUtils.mkdir(@options.data_dir) if not File.exist?(@options.data_dir)
+		rescue
+			puts "Failed to create data directory #{@options.data_dir}"
+			exit false
 		end
 
 		@options.verbose = false

@@ -42,7 +42,7 @@ class Rubac_db
 			puts "Initializing #{@dbname}"
 			@db = SQLite3::Database.new( @dbname )
 		rescue
-			puts "Failed to initialize #{@db}"
+			puts "Failed to initialize #{@dbname}"
 		end
 
 		if not File.exist?(@dbname)
