@@ -10,9 +10,10 @@
   <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
 </head>
 <body class="standalone-code">
-  <pre><span class="ruby-comment cmt"># File rubac.rb, line 192</span>
+  <pre><span class="ruby-comment cmt"># File rubac.rb, line 231</span>
         <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">process_options</span>
                 <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">verbose</span> = <span class="ruby-keyword kw">false</span> <span class="ruby-keyword kw">if</span> <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">quiet</span>
+                <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">dbname</span> = <span class="ruby-constant">File</span>.<span class="ruby-identifier">join</span>(<span class="ruby-ivar">@options</span>.<span class="ruby-identifier">data_dir</span>, <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">profile</span> <span class="ruby-operator">+</span> <span class="ruby-value str">&quot;.db&quot;</span>);
         <span class="ruby-keyword kw">end</span></pre>
 </body>
 </html>

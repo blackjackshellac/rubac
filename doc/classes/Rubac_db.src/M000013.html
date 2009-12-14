@@ -10,30 +10,59 @@
   <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
 </head>
 <body class="standalone-code">
-  <pre><span class="ruby-comment cmt"># File rubac_db.rb, line 35</span>
-        <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">initialize</span>(<span class="ruby-identifier">dbpath</span>)
-                <span class="ruby-ivar">@db_version</span> = <span class="ruby-constant">Hash</span>[ <span class="ruby-value str">&quot;major&quot;</span>, <span class="ruby-value str">&quot;0&quot;</span>, <span class="ruby-value str">&quot;minor&quot;</span>, <span class="ruby-value str">&quot;2&quot;</span> ]
-                <span class="ruby-identifier">puts</span> <span class="ruby-value str">&quot;major=&quot;</span> <span class="ruby-operator">+</span> <span class="ruby-ivar">@db_version</span>[<span class="ruby-value str">'major'</span>]
-                <span class="ruby-identifier">puts</span> <span class="ruby-value str">&quot;minor=&quot;</span> <span class="ruby-operator">+</span> <span class="ruby-ivar">@db_version</span>[<span class="ruby-value str">'minor'</span>]
+  <pre><span class="ruby-comment cmt"># File rubac_db.rb, line 36</span>
+        <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">initialize</span>(<span class="ruby-identifier">dbname</span>)
 
-                <span class="ruby-ivar">@dbpath</span>=<span class="ruby-identifier">dbpath</span>
+                <span class="ruby-comment cmt"># define globals hash</span>
+                <span class="ruby-ivar">@globals</span> = <span class="ruby-constant">Array</span>.<span class="ruby-identifier">new</span>
+                <span class="ruby-ivar">@globals</span> <span class="ruby-operator">&lt;&lt;</span> { 
+                        <span class="ruby-value str">'major_vers'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">&quot;major_vers&quot;</span>,
+                        <span class="ruby-value str">'minor_vers'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">&quot;minor_vers&quot;</span>,
+                        <span class="ruby-value str">'revision'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">&quot;revision&quot;</span>,
+                        <span class="ruby-value str">'client'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">&quot;client&quot;</span>,
+                        <span class="ruby-value str">'opts'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">&quot;opts&quot;</span>
+                }
+                <span class="ruby-ivar">@globals</span> <span class="ruby-operator">&lt;&lt;</span> {
+                        <span class="ruby-value str">'major_vers'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">&quot;0&quot;</span>,
+                        <span class="ruby-value str">'minor_vers'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">&quot;3&quot;</span>,
+                        <span class="ruby-value str">'revision'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">&quot;$Rev$&quot;</span>,
+                        <span class="ruby-value str">'client'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">&quot;localhost&quot;</span>,
+                        <span class="ruby-value str">'opts'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">&quot;&quot;</span>
+                }
+
+                <span class="ruby-comment cmt"># first array element is the table column name</span>
+                <span class="ruby-comment cmt"># if client is nil, use global client</span>
+                <span class="ruby-ivar">@includes</span> = <span class="ruby-constant">Array</span>.<span class="ruby-identifier">new</span>
+                <span class="ruby-ivar">@includes</span> <span class="ruby-operator">&lt;&lt;</span> { <span class="ruby-value str">'client'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">&quot;client&quot;</span>, <span class="ruby-value str">'path'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">&quot;path&quot;</span>, <span class="ruby-value str">'opts'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">&quot;opts&quot;</span>, <span class="ruby-value str">'excludes'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">&quot;excludes&quot;</span> }
+                <span class="ruby-ivar">@includes</span> <span class="ruby-operator">&lt;&lt;</span> { <span class="ruby-value str">'client'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-keyword kw">nil</span>, <span class="ruby-value str">'path'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">&quot;/home/etienne&quot;</span>, <span class="ruby-value str">'opts'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">&quot;--delete&quot;</span>, <span class="ruby-value str">'excludes'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">'*/.gvfs/'</span> }
+
+                <span class="ruby-comment cmt"># these excludes are global ...</span>
+                <span class="ruby-ivar">@excludes</span> = <span class="ruby-constant">Array</span>.<span class="ruby-identifier">new</span>
+                <span class="ruby-ivar">@excludes</span> <span class="ruby-operator">&lt;&lt;</span> { <span class="ruby-value str">'client'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">&quot;client&quot;</span>, <span class="ruby-value str">'path'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">&quot;path&quot;</span> }
+                <span class="ruby-ivar">@excludes</span> <span class="ruby-operator">&lt;&lt;</span> { <span class="ruby-value str">'client'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-keyword kw">nil</span>, <span class="ruby-value str">'path'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">'*/.mozilla/**/Cache/'</span> }
+
+                <span class="ruby-identifier">pp</span> ( <span class="ruby-ivar">@globals</span> )
+                <span class="ruby-identifier">pp</span> ( <span class="ruby-ivar">@includes</span> )
+                <span class="ruby-identifier">pp</span> ( <span class="ruby-ivar">@excludes</span> )
+
+                <span class="ruby-ivar">@dbname</span>=<span class="ruby-identifier">dbname</span>
                 <span class="ruby-keyword kw">begin</span>
-                        <span class="ruby-identifier">puts</span> <span class="ruby-node">&quot;Initializing #{@dbpath}&quot;</span>
-                        <span class="ruby-ivar">@db</span> = <span class="ruby-constant">SQLite3</span><span class="ruby-operator">::</span><span class="ruby-constant">Database</span>.<span class="ruby-identifier">new</span>( <span class="ruby-ivar">@dbpath</span> )
+                        <span class="ruby-identifier">puts</span> <span class="ruby-node">&quot;Initializing #{@dbname}&quot;</span>
+                        <span class="ruby-ivar">@db</span> = <span class="ruby-constant">SQLite3</span><span class="ruby-operator">::</span><span class="ruby-constant">Database</span>.<span class="ruby-identifier">new</span>( <span class="ruby-ivar">@dbname</span> )
                 <span class="ruby-keyword kw">rescue</span>
-                        <span class="ruby-identifier">puts</span> <span class="ruby-node">&quot;Failed to initialize #{@db}&quot;</span>
+                        <span class="ruby-identifier">puts</span> <span class="ruby-node">&quot;Failed to initialize #{@dbname}&quot;</span>
                 <span class="ruby-keyword kw">end</span>
 
-                <span class="ruby-identifier">create_globals</span> <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-identifier">table_exists?</span>(<span class="ruby-value str">&quot;globals&quot;</span>)
-                <span class="ruby-identifier">create_includes</span> <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-identifier">table_exists?</span>(<span class="ruby-value str">&quot;includes&quot;</span>)
-                <span class="ruby-identifier">create_excludes</span> <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-identifier">table_exists?</span>(<span class="ruby-value str">&quot;excludes&quot;</span>)
+                <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-constant">File</span>.<span class="ruby-identifier">exist?</span>(<span class="ruby-ivar">@dbname</span>)
+                        <span class="ruby-identifier">create_globals</span>
+                        <span class="ruby-identifier">create_includes</span>
+                        <span class="ruby-identifier">create_excludes</span>
+                <span class="ruby-keyword kw">else</span>
+                        <span class="ruby-identifier">create_globals</span> <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-identifier">table_exists?</span>(<span class="ruby-value str">&quot;globals&quot;</span>)
+                        <span class="ruby-identifier">create_includes</span> <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-identifier">table_exists?</span>(<span class="ruby-value str">&quot;includes&quot;</span>)
+                        <span class="ruby-identifier">create_excludes</span> <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-identifier">table_exists?</span>(<span class="ruby-value str">&quot;excludes&quot;</span>)
+                <span class="ruby-keyword kw">end</span>
 
-                <span class="ruby-ivar">@globals</span> = <span class="ruby-identifier">select_all</span>(<span class="ruby-value str">&quot;globals&quot;</span>)
-                <span class="ruby-identifier">p</span> <span class="ruby-ivar">@globals</span>
-                <span class="ruby-ivar">@excludes</span> = <span class="ruby-identifier">select_all</span>(<span class="ruby-value str">&quot;excludes&quot;</span>)
-                <span class="ruby-identifier">p</span> <span class="ruby-ivar">@excludes</span>
-                <span class="ruby-ivar">@includes</span> = <span class="ruby-identifier">select_all</span>(<span class="ruby-value str">&quot;includes&quot;</span>)
-                <span class="ruby-identifier">p</span> <span class="ruby-ivar">@includes</span>
         <span class="ruby-keyword kw">end</span></pre>
 </body>
 </html>

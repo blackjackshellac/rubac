@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
 </head>
 <body class="standalone-code">
-  <pre><span class="ruby-comment cmt"># File rubac.rb, line 92</span>
+  <pre><span class="ruby-comment cmt"># File rubac.rb, line 103</span>
         <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">initialize</span>(<span class="ruby-identifier">arguments</span>, <span class="ruby-identifier">stdin</span>)
                 <span class="ruby-ivar">@arguments</span> = <span class="ruby-identifier">arguments</span>
                 <span class="ruby-ivar">@stdin</span> = <span class="ruby-identifier">stdin</span>
@@ -19,13 +19,37 @@
                 <span class="ruby-comment cmt"># Set defaults</span>
                 <span class="ruby-ivar">@options</span> = <span class="ruby-constant">OpenStruct</span>.<span class="ruby-identifier">new</span>
                 <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">global</span> = <span class="ruby-keyword kw">false</span>
-                <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">profile</span> = <span class="ruby-value str">&quot;rubac&quot;</span>
+                <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">profile</span> = <span class="ruby-value str">&quot;default&quot;</span>
+                <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">dbname</span> = <span class="ruby-value str">&quot;&quot;</span>
+                
+                <span class="ruby-keyword kw">begin</span>
+                        <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">client</span> = <span class="ruby-constant">Socket</span>.<span class="ruby-identifier">gethostname</span>
+                <span class="ruby-keyword kw">rescue</span>
+                        <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">client</span> = <span class="ruby-value str">&quot;localhost&quot;</span>
+                <span class="ruby-keyword kw">end</span>
 
+                <span class="ruby-comment cmt"># </span>
+                <span class="ruby-comment cmt"># If /etc/rubac is writable use it as default, otherwise use</span>
+                <span class="ruby-comment cmt"># ~/.rubac/ (does this work for windoze?)</span>
+                <span class="ruby-comment cmt">#</span>
                 <span class="ruby-keyword kw">if</span> <span class="ruby-constant">ENV</span>[<span class="ruby-value str">'RUBAC_DATADIR'</span>]
                         <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">data_dir</span> = <span class="ruby-constant">ENV</span>[<span class="ruby-value str">'RUBAC_DATADIR'</span>]
                 <span class="ruby-keyword kw">else</span>
-                        <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">data_dir</span> = <span class="ruby-value str">&quot;/etc/rubac&quot;</span>
+                        <span class="ruby-keyword kw">if</span> <span class="ruby-constant">File</span>.<span class="ruby-identifier">writable?</span>(<span class="ruby-value str">&quot;/etc/rubac&quot;</span>)
+                                <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">data_dir</span> = <span class="ruby-value str">&quot;/etc/rubac&quot;</span>
+                        <span class="ruby-keyword kw">else</span>
+                                <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">data_dir</span> = <span class="ruby-constant">File</span>.<span class="ruby-identifier">expand_path</span>(<span class="ruby-value str">&quot;~&quot;</span>) <span class="ruby-operator">+</span> <span class="ruby-value str">&quot;/.rubac&quot;</span>
+                        <span class="ruby-keyword kw">end</span>
                         <span class="ruby-constant">ENV</span>[<span class="ruby-value str">'RUBAC_DATADIR'</span>] = <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">data_dir</span>
+
+                        <span class="ruby-identifier">puts</span> <span class="ruby-node">&quot;Data directory is #{@options.data_dir}&quot;</span>
+                <span class="ruby-keyword kw">end</span>
+
+                <span class="ruby-keyword kw">begin</span>
+                        <span class="ruby-constant">FileUtils</span>.<span class="ruby-identifier">mkdir</span>(<span class="ruby-ivar">@options</span>.<span class="ruby-identifier">data_dir</span>) <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-constant">File</span>.<span class="ruby-identifier">exist?</span>(<span class="ruby-ivar">@options</span>.<span class="ruby-identifier">data_dir</span>)
+                <span class="ruby-keyword kw">rescue</span>
+                        <span class="ruby-identifier">puts</span> <span class="ruby-node">&quot;Failed to create data directory #{@options.data_dir}&quot;</span>
+                        <span class="ruby-identifier">exit</span> <span class="ruby-keyword kw">false</span>
                 <span class="ruby-keyword kw">end</span>
 
                 <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">verbose</span> = <span class="ruby-keyword kw">false</span>

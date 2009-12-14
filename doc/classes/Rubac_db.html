@@ -90,10 +90,12 @@
       <a href="#M000018">create_excludes</a>&nbsp;&nbsp;
       <a href="#M000017">create_globals</a>&nbsp;&nbsp;
       <a href="#M000019">create_includes</a>&nbsp;&nbsp;
+      <a href="#M000021">insert</a>&nbsp;&nbsp;
       <a href="#M000013">new</a>&nbsp;&nbsp;
       <a href="#M000014">select_all</a>&nbsp;&nbsp;
       <a href="#M000015">table_exists?</a>&nbsp;&nbsp;
-      <a href="#M000020">test</a>&nbsp;&nbsp;
+      <a href="#M000022">test</a>&nbsp;&nbsp;
+      <a href="#M000020">update</a>&nbsp;&nbsp;
       </div>
     </div>
 
@@ -121,7 +123,7 @@
         <div class="method-heading">
           <a href="Rubac_db.src/M000013.html" target="Code" class="method-signature"
             onclick="popupCode('Rubac_db.src/M000013.html');return false;">
-          <span class="method-name">new</span><span class="method-args">(dbpath)</span>
+          <span class="method-name">new</span><span class="method-args">(dbname)</span>
           </a>
         </div>
       
@@ -190,6 +192,34 @@ Create the specified table with the sql provided
         </div>
       </div>
 
+      <div id="method-M000021" class="method-detail">
+        <a name="M000021"></a>
+
+        <div class="method-heading">
+          <a href="Rubac_db.src/M000021.html" target="Code" class="method-signature"
+            onclick="popupCode('Rubac_db.src/M000021.html');return false;">
+          <span class="method-name">insert</span><span class="method-args">(table, columns, values)</span>
+          </a>
+        </div>
+      
+        <div class="method-description">
+          <p>
+Insert the given values into the specified columns in the table
+</p>
+<p>
+<a href="Rubac_db.html#M000021">insert</a>
+</p>
+<pre>
+   * table - the table to be inserted
+   * columns - the comma delimited list of columsn to be inserted
+   * values - the comma delimited list of values to be inserted
+</pre>
+<p>
+bool success/fail
+</p>
+        </div>
+      </div>
+
       <div id="method-M000014" class="method-detail">
         <a name="M000014"></a>
 
@@ -218,17 +248,45 @@ Create the specified table with the sql provided
         </div>
       </div>
 
+      <div id="method-M000022" class="method-detail">
+        <a name="M000022"></a>
+
+        <div class="method-heading">
+          <a href="Rubac_db.src/M000022.html" target="Code" class="method-signature"
+            onclick="popupCode('Rubac_db.src/M000022.html');return false;">
+          <span class="method-name">test</span><span class="method-args">()</span>
+          </a>
+        </div>
+      
+        <div class="method-description">
+        </div>
+      </div>
+
       <div id="method-M000020" class="method-detail">
         <a name="M000020"></a>
 
         <div class="method-heading">
           <a href="Rubac_db.src/M000020.html" target="Code" class="method-signature"
             onclick="popupCode('Rubac_db.src/M000020.html');return false;">
-          <span class="method-name">test</span><span class="method-args">()</span>
+          <span class="method-name">update</span><span class="method-args">(table, column, value)</span>
           </a>
         </div>
       
         <div class="method-description">
+          <p>
+Update the given table column with the specified value
+</p>
+<p>
+<a href="Rubac_db.html#M000020">update</a>
+</p>
+<pre>
+  * table - the table to be updated
+  * column - the column in the table to be updated
+  * value - the value to be updated
+</pre>
+<p>
+bool success/fail
+</p>
         </div>
       </div>
 

@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
 </head>
 <body class="standalone-code">
-  <pre><span class="ruby-comment cmt"># File rubac.rb, line 146</span>
+  <pre><span class="ruby-comment cmt"># File rubac.rb, line 181</span>
         <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">parsed_options?</span>
 
                 <span class="ruby-comment cmt"># Specify options</span>
@@ -18,6 +18,10 @@
                 <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-v'</span>, <span class="ruby-value str">'--version'</span>, <span class="ruby-value str">&quot;Print version&quot;</span>)    { <span class="ruby-identifier">output_version</span> ; <span class="ruby-identifier">exit</span> <span class="ruby-value">0</span> }
                 <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-V'</span>, <span class="ruby-value str">'--verbose'</span>, <span class="ruby-value str">&quot;Run verbosely&quot;</span>)    { <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">verbose</span> = <span class="ruby-keyword kw">true</span> }  
                 <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-q'</span>, <span class="ruby-value str">'--quiet'</span>,   <span class="ruby-value str">&quot;Run quietly&quot;</span>)      { <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">quiet</span> = <span class="ruby-keyword kw">true</span> }
+
+                <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-cHOST'</span>, <span class="ruby-value str">'--client HOST'</span>, <span class="ruby-value str">&quot;Backup Client hostname&quot;</span>) <span class="ruby-keyword kw">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">host</span><span class="ruby-operator">|</span>
+                        <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">client</span> = <span class="ruby-identifier">host</span>
+                <span class="ruby-keyword kw">end</span>
 
                 <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-DPATH'</span>, <span class="ruby-value str">'--data_dir PATH'</span>, <span class="ruby-value str">&quot;Database directory&quot;</span>) <span class="ruby-keyword kw">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">dir</span><span class="ruby-operator">|</span>
                         <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">data_dir</span> = <span class="ruby-identifier">dir</span>

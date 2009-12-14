@@ -56,7 +56,7 @@
     </tr>
     <tr class="top-aligned-row">
       <td><strong>Last Update:</strong></td>
-      <td>Fri Dec 11 18:00:04 -0500 2009</td>
+      <td>Mon Dec 14 11:04:43 -0500 2009</td>
     </tr>
     </table>
   </div>
@@ -86,7 +86,7 @@
   -P, --profile[=NAME]  Apply options only to named backup profile (default is rubac)
   -D, --data_dir[=PATH] Database directory
 
-  -c, --client[=HOST]   Client to backup (default is local)
+  -c, --client[=HOST]   Client to backup (default is local backup)
   -i, --include=PATH    Include path, comma separate multiple paths
   -x, --exclude=PATH    Exclude path, comma separate multiple paths
   -d, --dest=DEST       Local destination path (eg., /mnt/backup)
@@ -100,6 +100,7 @@
   -t, --list            List the includes, excludes, etc., for the named profile
   -F, --full            Perform full backup (overwrites rubac.0)
   -I, --incremental[=N] Number of incremental backups (default is 5)
+  -n, --dry-run         Run a trial run of the backup
   -R, --run             Run specified profile
 
   -H, --history         Backup history
@@ -120,6 +121,14 @@
   rubac -l /var/log/rubac
   ...
   rubac --run
+
+  Should one be able to specify a client using rsync notation,
+
+  rubac -c donkey -i &quot;/home/steeve,/home/lissa,/home/etienne&quot; -x &quot;*/.gvfs/&quot;
+  rubac -i &quot;donkey:/home/steeve,donkey:/home/lissa,donkey:/home/etienne&quot;
+
+  Each include path should probably include a client (unless local) so
+  the host should be part of the includes database table.
 </pre>
 <h2>Environment Variables ==</h2>
 <p>
@@ -147,7 +156,7 @@ RUBAC_DATADIR - set the database directory
   along with this program.  If not, see &lt;http://www.gnu.org/licenses/&gt;.
 </pre>
 <p>
-$Id: rubac.rb 24 2009-12-11 20:34:42Z steeve $
+$Id: rubac.rb 32 2009-12-14 02:34:57Z steeve $
 </p>
 
     </div>
@@ -160,6 +169,7 @@ $Id: rubac.rb 24 2009-12-11 20:34:42Z steeve $
       rdoc/usage&nbsp;&nbsp;
       ostruct&nbsp;&nbsp;
       date&nbsp;&nbsp;
+      socket&nbsp;&nbsp;
       <a href="rubac_db_rb.html">rubac_db</a>&nbsp;&nbsp;
       </div>
     </div>
