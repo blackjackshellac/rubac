@@ -36,21 +36,18 @@ class Rubac_db
 	def initialize(dbname)
 
 		# define globals hash
-		@globals = Array.new
-		@globals << { 
-			:major_vers => "major_vers",
-			:minor_vers => "minor_vers",
-			:revision => "revision",
-			:client => "client",
-			:opts => "opts"
+		@globals = {
+			'major_vers' => "0",
+			'minor_vers' => "3",
+			'revision' => "$Rev$"[6..-3],
+			'client' => "localhost",
+			'opts' => "",
+			'includes' => nil,
+			'excludes' => nil 
 		}
-		@globals << {
-			:major_vers => "0",
-			:minor_vers => "3",
-			:revision => "$Rev$"[6..-3],
-			:client => "localhost",
-			:opts => ""
-		}
+
+		print_globals
+		print_includes
 
 		# first array element is the table column name
 		# if client is nil, use global client
@@ -63,9 +60,9 @@ class Rubac_db
 		@excludes << { :client => "client", :path => "path" }
 		@excludes << { :client => nil, :path => '*/.mozilla/**/Cache/' }
 
-		pp ( @globals )
-		pp ( @includes )
-		pp ( @excludes )
+		#pp ( @globals )
+		#pp ( @includes )
+		#pp ( @excludes )
 
 		@dbname=dbname
 		begin
@@ -204,6 +201,40 @@ SQL
 			puts "Error: sql failure #{sql}"
 			false
 		end
+	end
+
+	def print_globals
+		#:major_vers
+		#:minor_vers
+		#:revision
+		#:client
+		#:opts
+		#:includes
+		#:excludes
+
+		inc=@globals['includes']
+		exc=@globals['excludes']
+		if @globals['client'] != "localhost"
+			inc=@globals['client'] + ":$inc"
+			exc=@globals['client'] + ":$exc"
+		end
+
+		puts "Includes=#{inc}"
+		puts "Excludes=#{exc}"
+	end
+
+	def print_includes
+		#
+		#len = @includes.length-1
+		#puts "Print includes len=#{len}"
+		#for i in (1..len)
+		#	@includes[i].each do |k,v|
+		#		puts sprintf("%10s=%s", k, v)
+		#	end
+		#end
+	end
+
+	def print_excludes
 	end
 
 	def test
