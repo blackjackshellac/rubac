@@ -1,8 +1,8 @@
 #!/usr/bin/ruby
 #
 # == Synopsis 
-#   A simple backup program for ruby powered by rsync that can save
-#   multiple backup profiles between uses.
+#   A ruby backup front-end powered by rsync that can save
+#   multiple backup profiles between uses in an sqlite database
 #
 # == Usage 
 #   rubac [options]
@@ -28,7 +28,7 @@
 #   -t, --list            List the includes, excludes, etc., for the named profile
 #   -F, --full            Perform full backup (overwrites rubac.0)
 #   -I, --incremental[=N] Number of incremental backups (default is 5)
-#   -n, --dry-run         Run a trial run of the backup
+#   -n, --dry-run         Perform a trial run of the backup
 #   -R, --run             Run specified profile
 #
 #   -H, --history         Backup history
@@ -50,6 +50,10 @@
 #   ...
 #   rubac --run
 #
+#   List then backup client esme using the esme profile
+#   rubac -c esme -P esme --list
+#   rubac -c esme -P esme --run
+#
 #   Should one be able to specify a client using rsync notation,
 #
 #   rubac -c donkey -i "/home/steeve,/home/lissa,/home/etienne" -x "*/.gvfs/"
@@ -60,7 +64,10 @@
 #
 # == Environment Variables ==
 #
-# RUBAC_DATADIR - set the database directory
+#   RUBAC_DATADIR - set the database directory
+#   RUBAC_PROFILE - set the backup profile to use
+#   RUBAC_CLIENT  - set the client to use
+#   RSYNC_RSH     - ssh command string, defaults to "ssh"
 #
 # == Author
 #   Steeve McCauley
@@ -90,12 +97,15 @@ require 'date'
 require 'socket'
 
 require 'rubac_db'
+require 'szmsg'
 
 #
 # rsync version must be at least 2.5.6 for --link-dest option
 #
 
 class Rubac
+	include Szmsg
+
 	VERSION = '0.0.1'
 
 	attr_reader :options
@@ -103,13 +113,13 @@ class Rubac
 	def initialize(arguments, stdin)
 		@arguments = arguments
 		@stdin = stdin
-		@revision = "$Rev$"
+		@revision = "$Rev$"[6..-3]
 			      
 		# Set defaults
 		@options = OpenStruct.new
 		@options.global = false
 		@options.profile = "default"
-		@options.dbname = ""
+		@options.dbname = nil
 		
 		begin
 			@options.client = Socket.gethostname
@@ -131,7 +141,7 @@ class Rubac
 			end
 			ENV['RUBAC_DATADIR'] = @options.data_dir
 
-			puts "Data directory is #{@options.data_dir}"
+			info "Data directory is #{@options.data_dir}"
 		end
 
 		begin
@@ -143,10 +153,12 @@ class Rubac
 
 		@options.verbose = false
 		@options.quiet = false
-		@options.include = ""
-		@options.exclude = ""
-		@options.opts = ""
+		@options.include = nil
+		@options.exclude = nil
+		@options.opts = nil
 		@options.run = false
+		@options.cmd = nil
+		@options.dry_run = false
 
 		#
 		# TODO - add additional defaults end
@@ -165,24 +177,26 @@ class Rubac
 			process_arguments            
 			process_command
 
-			puts "\nFinished at #{DateTime.now}" if @options.verbose
-
-			puts "###"
-			puts @options
-			puts "###"
-
+			#puts "\nFinished at #{DateTime.now}" if @options.verbose
 		else
-			output_usage
+			usage_command
 		end
 	end
 
 	protected
 
+	def set_command(c)
+		if @options.cmd == nil
+			@options.cmd="#{c}_command"
+		else
+			warn "Command is already set to #{@options.cmd}, ignoring #{c} command"
+		end
+	end
+
 	def parsed_options?
 
 		# Specify options
 		opts = OptionParser.new 
-		opts.on('-v', '--version', "Print version")    { output_version ; exit 0 }
 		opts.on('-V', '--verbose', "Run verbosely")    { @options.verbose = true }  
 		opts.on('-q', '--quiet',   "Run quietly")      { @options.quiet = true }
 
@@ -195,31 +209,44 @@ class Rubac
 		end
 
 		opts.on('-iPATH', '--include PATH', "Add include path") do |inc|
-			@options.include = inc
+			if @options.include
+				@options.include = @options.include + ",#{inc}"
+			else
+				@options.include = inc
+			end
 		end
 
 		opts.on('-xPATH', '--exclude PATH', "Add exclude path") do |exc|
-			@options.exclude = exc
+			if @options.exclude
+				@options.exclude = @options.exclude + ",#{exc}"
+			else
+				@options.exclude = exc
+			end
 		end
+
 		opts.on('-PNAME', '--profile NAME', "Apply opts to specified profile") do |profile|
 			@options.profile = profile
 		end
 		# TO DO - add additional options
 
-		opts.on('-h', '--help',    "Print help") do   #   { output_help }
-			output_help
+		opts.on('-n', '--dry-run', "Perform a trial run of the backup") do
+			@options.dry_run = true
 		end
-
+		opts.on('-h', '--help',    "Print help") do   #   { output_help }
+			set_command("help")
+		end
 		opts.on('-r', '--run', "Run the backup") do
-			@cmd="run"
+			set_command("run")
 		end
 		opts.on('-t', '--list', "List the backup options") do
-			@cmd="list"
+			set_command("list")
 		end
-
-		puts "###"
-		puts @options
-		puts "###"
+		opts.on('-H', '--history', "Backup history") do
+			set_command("history")
+		end
+		opts.on('-v', '--version', "Print version") do
+			set_command("version")
+		end
 
 		opts.parse!(@arguments) rescue return false
 
@@ -244,7 +271,7 @@ class Rubac
 	# True if required arguments were provided
 	def arguments_valid?
 		# TO DO - implement your real logic here
-		puts "arguments =  #{@arguments.length} \n"
+		#puts "arguments =  #{@arguments.length} \n"
 		true if @arguments.length >= 1 
 	end
 
@@ -253,50 +280,68 @@ class Rubac
 		# TO DO - place in local vars, etc
 	end
     
-	def output_help
-		output_version
+	def help_command 
+		version_command
 		RDoc::usage() #exits app
 	end
     
-	def output_usage
+	def usage_command
 		RDoc::usage('usage') # gets usage from comments above
 	end
     
-	def output_version
+	def run_command
+		info "run command"
+	end
+
+	def list_command
+		info "list command"
+	end
+
+	def history_command
+		info "history command"
+	end
+
+	def version_command
 		puts "#{File.basename(__FILE__, ".rb")} version #{VERSION}"
 	end
     
 	def process_command
-		# TO DO - do whatever this app does
+		# load database
+		@db = Rubac_db.new(@options.dbname);
 
 		#process_standard_input # [Optional]
-
-		db = Rubac_db.new(@options.dbname);
-		db.update("globals", "client", @options.client)
-		db.test
-
-		@cmd="ls -l /home/rubac/linguini/default"
-		puts @cmd
-		listing=`#{@cmd}`
-		p $?.exitstatus
-		puts listing
-
-		# DEST is the backup directory
-		# HOST is the client (localhost or `hostname -s` is considered local)
-		# PROFILE is the name of the profile
 		#
-		# if exists /DEST/HOST/PROFILE/rubac.4 move it to /DEST/HOST/PROFILE/rubac.5
-		# if exists /DEST/HOST/PROFILE/rubac.3 move it to /DEST/HOST/PROFILE/rubac.4
-		# if exists /DEST/HOST/PROFILE/rubac.2 move it to /DEST/HOST/PROFILE/rubac.3
-		# if exists /DEST/HOST/PROFILE/rubac.1 move it to /DEST/HOST/PROFILE/rubac.2
-		# if exists /DEST/HOST/PROFILE/rubac.0 move it to /DEST/HOST/PROFILE/rubac.1
-		# backup to /DEST/HOST/PROFILE/rubac.0
-		a=[]
-		a=(1..5).to_a.reverse
-		a.each do |y|
-			x = y-1
-			puts "mv /DEST/HOST/PROFILE/rubac.#{x} /DEST/HOST/PROFILE/rubac.#{y}"
+		puts "##### #{@options.cmd} #####"
+		if @options.cmd
+			eval @options.cmd
+		else
+			@db.update("globals", "client", @options.client)
+			@db.test
+
+			@cmd="ls -l /home/rubac/linguini/default"
+			puts @cmd
+			listing=`#{@cmd}`
+			p $?.exitstatus
+			puts listing
+
+			# DEST is the backup directory
+			# HOST is the client (localhost or `hostname -s` is considered local)
+			# PROFILE is the name of the profile
+			#
+			# if exists /DEST/HOST/PROFILE/rubac.4 move it to /DEST/HOST/PROFILE/rubac.5
+			# if exists /DEST/HOST/PROFILE/rubac.3 move it to /DEST/HOST/PROFILE/rubac.4
+			# if exists /DEST/HOST/PROFILE/rubac.2 move it to /DEST/HOST/PROFILE/rubac.3
+			# if exists /DEST/HOST/PROFILE/rubac.1 move it to /DEST/HOST/PROFILE/rubac.2
+			# if exists /DEST/HOST/PROFILE/rubac.0 move it to /DEST/HOST/PROFILE/rubac.1
+			# backup to /DEST/HOST/PROFILE/rubac.0
+			a=[]
+			a=(1..5).to_a.reverse
+			a.each do |y|
+				x = y-1
+				puts "mv /DEST/HOST/PROFILE/rubac.#{x} /DEST/HOST/PROFILE/rubac.#{y}"
+			end
 		end
+
 	end
 
 	def process_standard_input
