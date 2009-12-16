@@ -96,6 +96,8 @@ require 'ostruct'
 require 'date'
 require 'socket'
 
+require 'xmlsimple'
+
 require 'rubac_db'
 require 'szmsg'
 
@@ -359,4 +361,71 @@ rubac = Rubac.new(ARGV, STDIN)
 rubac.burp
 
 p Dir.glob("*")
+
+config = {
+   'globals' => {
+      'version' => {
+         'major' => '0',
+         'minor' => '5',
+         'revision' => "$Rev$"[6..-3]
+      },
+      'opts' => '--delete-excluded',
+      'includes' => '/root,/etc',
+      'excludes' => '*/.thumbnails/,*/.thunderbird/*/ImapMail/,*/.beagle/,*/.mozilla/firefox/*/Cache/,*/.gvfs/,*/.cache/,*/.ccache/,*/.dvdcss/,*/.macromedia/,*/.local/share/Trash/,*/.mcop/,*/.mozilla-*/,*/tmp/'
+   },
+   'clients' => {
+      'client' => {
+         'host' => 'localhost',
+	 'includes' => ''
+      },
+      'client' => {
+         'host' => 'linguini',
+         'includes' => '/home/steeve,/home/lissa,/home/etienne,/data/osd,/data/audio,/data/household'
+      }
+   }
+}
+
+pp config
+
+#doc = REXML::Document.new XmlSimple.xml_out(config, 'AttrPrefix' => true)
+#d = ''
+#doc.write(d)
+#p d
+out = XmlSimple.xml_out(config, { 'RootName' => 'config', 'NoAttr' => true, 'AttrPrefix' => true } )
+puts "##### XML Output\n" + out
+
+xml = <<-XML
+<config>
+<globals>
+ <version>
+ <major>0</major>
+ <minor>5</minor>
+ <revision>41</revision>
+ </version>
+ <opts>--delete-excluded</opts>
+ <includes>/root,/etc</includes>
+ <excludes>*/.mozilla/firefox/*/Cache/,*/.gvfs/</excludes>
+</globals>
+<clients>
+ <client>
+  <host>localhost</host>
+  <includes></includes>
+ </client>
+ <client>
+  <host>linguini</host>
+  <includes>/home/steeve,/home/lissa,/home/etienne,/data/osd,/data/audio,/data/household</includes>
+  <excludes>*/.thumbnails/,*/.thunderbird/*/ImapMail/,*/.beagle/,*/.mozilla/firefox/*/Cache/,*/.gvfs/,*/.cache/,*/.ccache/,*/.dvdcss/,*/.macromedia/,*/.local/share/Trash/,*/.mcop/,*/.mozilla-*/,*/tmp/
+  </excludes>
+ </client>
+</clients>
+</config>
+XML
+
+puts "##### XML Input\n" + xml
+cfg = XmlSimple.xml_in(xml)
+pp cfg
+
+puts "##### XML Output\n"
+out = XmlSimple.xml_out(cfg, { 'RootName' => 'config', 'NoAttr' => true, 'AttrPrefix' => true })
+puts out
 
