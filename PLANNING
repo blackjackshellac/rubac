@@ -1,70 +1,131 @@
 #
 # rsync version must be at least 2.5.6 for --link-dest option
 #
-# rm -rf rubac.3
-# mv rubac.2 rubac.3
-# mv rubac.1 rubac.2
-# mv rubac.0 rubac.1
-# rsync -av --relative --delete --delete-excluded --link-dest=/home/rubac/linguini/default/rubac.1 /home/etienne /home/rubac/linguini/default/rubac.0
+ rm -rf rubac.3
+ mv rubac.2 rubac.3
+ mv rubac.1 rubac.2
+ mv rubac.0 rubac.1
+ rsync -av --relative --delete --delete-excluded --link-dest=/home/rubac/linguini/default/rubac.1 /home/etienne /home/rubac/linguini/default/rubac.0
+
+ Latest full backup is in /DEST/HOST/PROFILE/rubac.0
+ Incrementals are in /DEST/HOST/PROFILE/rubac.[1-n]
+ Yearly incremental in /DEST/HOST/PROFILE/rubac.%year%
+ Monthly incremental in /DEST/HOST/PROFILE/rubac.%month%
+
 #
-# Latest full backup is in /DEST/HOST/PROFILE/rubac.0
-# Incrementals are in /DEST/HOST/PROFILE/rubac.[1-n]
-# Yearly incremental in /DEST/HOST/PROFILE/rubac.%year%
-# Monthly incremental in /DEST/HOST/PROFILE/rubac.%month%
+#Examples,
 #
-# Examples,
-#
-# Do first time full backup to rubac.0
-#   rsync -av --relative --delete --delete-excluded HOST:/SRC /DEST/HOST/PROFILE/rubac.0
-#
-# Do yearly backup to rubac.2009 from full backup rubac.0
-#   mv /DEST/HOST/PROFILE/rubac.0 /DEST/HOST/PROFILE/rubac.2009
-#   rsync -av --relative --delete --delete-excluded --link-dest=/DEST/HOST/PROFILE/rubac.2009 HOST:/SRC /DEST/HOST/PROFILE/rubac.0
-#
-# Do numbered incremental n=5
-#   rm -rf /DEST/HOST/PROFILE/rubac.5
-#   mv /DEST/HOST/PROFILE/rubac.4 /DEST/HOST/PROFILE/rubac.5
-#   mv /DEST/HOST/PROFILE/rubac.3 /DEST/HOST/PROFILE/rubac.4
-#   mv /DEST/HOST/PROFILE/rubac.2 /DEST/HOST/PROFILE/rubac.3
-#   mv /DEST/HOST/PROFILE/rubac.1 /DEST/HOST/PROFILE/rubac.2
-#   mv /DEST/HOST/PROFILE/rubac.0 /DEST/HOST/PROFILE/rubac.1
-#   rsync -av --relative --delete --delete-excluded --link-dest=/DEST/HOST/PROFILE/rubac.1 HOST:/SRC /DEST/HOST/PROFILE/rubac.0
-#
-# Do named incremental snapshot
-#
-#   rm -rf /DEST/HOST/PROFILE/rubac.snapshot
-#   mv /DEST/HOST/PROFILE/rubac.0 /DEST/HOST/PROFILE/rubac.snapshot
-#   rsync -av --relative --delete --delete-excluded --link-dest=/DEST/HOST/PROFILE/rubac.snapshot HOST:/SRC /DEST/HOST/PROFILE/rubac.0
-#   
+
+ - Do first time full backup to rubac.0
+   rsync -av --relative --delete --delete-excluded HOST:/SRC /DEST/HOST/PROFILE/rubac.0
+
+ - Do yearly backup to rubac.2009 from full backup rubac.0
+   mv /DEST/HOST/PROFILE/rubac.0 /DEST/HOST/PROFILE/rubac.2009
+   rsync -av --relative --delete --delete-excluded --link-dest=/DEST/HOST/PROFILE/rubac.2009 HOST:/SRC /DEST/HOST/PROFILE/rubac.0
+
+ - Do numbered incremental n=5
+   rm -rf /DEST/HOST/PROFILE/rubac.5
+   mv /DEST/HOST/PROFILE/rubac.4 /DEST/HOST/PROFILE/rubac.5
+   mv /DEST/HOST/PROFILE/rubac.3 /DEST/HOST/PROFILE/rubac.4
+   mv /DEST/HOST/PROFILE/rubac.2 /DEST/HOST/PROFILE/rubac.3
+   mv /DEST/HOST/PROFILE/rubac.1 /DEST/HOST/PROFILE/rubac.2
+   mv /DEST/HOST/PROFILE/rubac.0 /DEST/HOST/PROFILE/rubac.1
+   rsync -av --relative --delete --delete-excluded --link-dest=/DEST/HOST/PROFILE/rubac.1 HOST:/SRC /DEST/HOST/PROFILE/rubac.0
+
+ - Do named incremental snapshot
+
+   rm -rf /DEST/HOST/PROFILE/rubac.snapshot
+   mv /DEST/HOST/PROFILE/rubac.0 /DEST/HOST/PROFILE/rubac.snapshot
+   rsync -av --relative --delete --delete-excluded --link-dest=/DEST/HOST/PROFILE/rubac.snapshot HOST:/SRC /DEST/HOST/PROFILE/rubac.0
+   
 #
 ### Failed backups
 #
-# ** 1 - Don't delete the oldest incremental before finishing all of the moves
-# ** 2 - Backup to a temporary directory for the duration of the backup, move it
-# **     into place when the backup is finished.
+
+ 1 - Don't delete the oldest incremental before finishing all of the moves
+ 2 - Backup to a temporary directory for the duration of the backup, move it
+     into place when the backup is finished.
+
+ mv /DEST/HOST/PROFILE/rubac.4 /DEST/HOST/PROFILE/rubac.remove
+ mv /DEST/HOST/PROFILE/rubac.3 /DEST/HOST/PROFILE/rubac.4
+ mv /DEST/HOST/PROFILE/rubac.2 /DEST/HOST/PROFILE/rubac.3
+ mv /DEST/HOST/PROFILE/rubac.1 /DEST/HOST/PROFILE/rubac.2
+ mv /DEST/HOST/PROFILE/rubac.0 /DEST/HOST/PROFILE/rubac.1
+ rsync -av --relative --delete --delete-excluded --link-dest=/DEST/HOST/PROFILE/rubac.1 HOST:/SRC /DEST/HOST/PROFILE/rubac.0.incomplete
+ if $?.exitstatus != 0
+    # restore the previous backup
+    rm -rf /DEST/HOST/PROFILE/rubac.0.incomplete
+    mv /DEST/HOST/PROFILE/rubac.1 /DEST/HOST/PROFILE/rubac.0
+    mv /DEST/HOST/PROFILE/rubac.2 /DEST/HOST/PROFILE/rubac.1
+    mv /DEST/HOST/PROFILE/rubac.3 /DEST/HOST/PROFILE/rubac.2
+    mv /DEST/HOST/PROFILE/rubac.4 /DEST/HOST/PROFILE/rubac.3
+    mv /DEST/HOST/PROFILE/rubac.remove /DEST/HOST/PROFILE/rubac.4
+ else
+    /DEST/HOST/PROFILE/rubac.0.incomplete /DEST/HOST/PROFILE/rubac.0
+    rm -rf /DEST/HOST/PROFILE/rubac.remove
+ end
+
+ 3 - Trap signals to cleanup an incomplete backup.
+
+ See Signal.trap("TERM") { puts "caught TERM" } or Signal.list
+   - for starters probably want to trap TERM, INT and HUP
+
 #
-# mv /DEST/HOST/PROFILE/rubac.4 /DEST/HOST/PROFILE/rubac.remove
-# mv /DEST/HOST/PROFILE/rubac.3 /DEST/HOST/PROFILE/rubac.4
-# mv /DEST/HOST/PROFILE/rubac.2 /DEST/HOST/PROFILE/rubac.3
-# mv /DEST/HOST/PROFILE/rubac.1 /DEST/HOST/PROFILE/rubac.2
-# mv /DEST/HOST/PROFILE/rubac.0 /DEST/HOST/PROFILE/rubac.1
-# rsync -av --relative --delete --delete-excluded --link-dest=/DEST/HOST/PROFILE/rubac.1 HOST:/SRC /DEST/HOST/PROFILE/rubac.0.incomplete
-# if $?.exitstatus != 0
-#    # restore the previous backup
-#    rm -rf /DEST/HOST/PROFILE/rubac.0.incomplete
-#    mv /DEST/HOST/PROFILE/rubac.1 /DEST/HOST/PROFILE/rubac.0
-#    mv /DEST/HOST/PROFILE/rubac.2 /DEST/HOST/PROFILE/rubac.1
-#    mv /DEST/HOST/PROFILE/rubac.3 /DEST/HOST/PROFILE/rubac.2
-#    mv /DEST/HOST/PROFILE/rubac.4 /DEST/HOST/PROFILE/rubac.3
-#    mv /DEST/HOST/PROFILE/rubac.remove /DEST/HOST/PROFILE/rubac.4
-# else
-#    /DEST/HOST/PROFILE/rubac.0.incomplete /DEST/HOST/PROFILE/rubac.0
-#    rm -rf /DEST/HOST/PROFILE/rubac.remove
-# end
+### XML configuration using a hash
 #
-# ** 3 - Trap signals to cleanup an incomplete backup.
-#
-# See Signal.trap("TERM") { puts "caught TERM" } or Signal.list
-#   - for starters probably want to trap TERM, INT and HUP
-#
+
+config = {
+   'globals' => {
+      'version' => {
+         'major' => '0'
+         'minor' => '5'
+         'revision' => "$Rev$"[6..-3]
+      }
+      'opts' => '--delete-excluded'
+      'includes' => '/root,/etc'
+      'excludes' => '/tmp'
+   }
+   'clients' => {
+      'client' => {
+         'host' => 'localhost'
+         ...
+      }
+      'client' => {
+         'host' => 'linguini'
+         'includes' = '/home/steeve,/home/lissa,/home/etienne,/etc,/root'
+         'excludes' = '*/.thumbnails/,*/.thunderbird/*/ImapMail/,*/.beagle/,*/.mozilla/firefox/*/Cache/,*/.gvfs/,*/.cache/,*/.ccache/,*/.dvdcss/,*/.macromedia/,*/.local/share/Trash/,*/.mcop/,*/.mozilla-*/,*/tmp/'
+      }
+   }
+}
+
+<?xml version="1.1" encoding="US-ASCII"?>
+<config>
+  <globals>
+    <version>
+      <major>0</major>
+      <minor>5</minor>
+      <revision>$Rev$</revision>
+    </version>
+    <opts></opts>
+    <includes></includes>
+    <excludes></excludes>
+  </globals>
+  <clients>
+    <client host="linguini">
+        <includes>/home/steeve,/home/lissa,/home/etienne,/etc,/root</includes>
+        <excludes>
+            */.thumbnails/,*/.thunderbird/*/ImapMail/,*/.beagle/,*/.mozilla/firefox/*/Cache/,*/.gvfs/,*/.cache/,*/.ccache/,*/.dvdcss/,*/.macromedia/,*/.local/share/Trash/,*/.mcop/,*/.mozilla-*/,*/tmp/
+        </excludes>
+    </client>
+    <client host="valium"
+    </client>
+    <client host="pablo">
+    </client>
+  </client>
+</config>
+</xml>
+
+
+
+
 
