@@ -105,6 +105,134 @@ require 'szmsg'
 # rsync version must be at least 2.5.6 for --link-dest option
 #
 
+class Config_rubac
+	#
+	# configuration template hash
+	#
+	def initialize
+		@def_config = {
+			'globals' => {
+				'version' => {
+					'major' => '0',
+					'minor' => '5',
+					'revision' => "$Rev$"[6..-3]
+				},
+				'opts' => '--delete-excluded',
+				'includes' => '/root,/etc',
+				'excludes' => '*/.thumbnails/,*/.thunderbird/*/ImapMail/,*/.beagle/,*/.mozilla/firefox/*/Cache/,*/.gvfs/,*/.cache/,*/.ccache/,*/.dvdcss/,*/.macromedia/,*/.local/share/Trash/,*/.mcop/,*/.mozilla-*/,*/tmp/'
+			},
+			'clients' => {
+				'localhost' => {
+					'includes' => '',
+					'excludes' => '',
+					'opts' => ''
+				},
+			}
+		}
+		@config = {}
+	end
+
+	# load the xml config
+	def load_xml(file, path="./")
+		@xml_file = File.join(path, file)
+		if File.exist?(file)
+			@config = XmlSimple.xml_in(file, 'ForceArray' => false)
+		else
+			@config = @def_config.to_hash
+		end
+		puts "##### load_xml #{@xml_file}"
+		pp @config
+	end
+
+	# save the xml config
+	def save_xml
+		out = XmlSimple.xml_out(@config, { 'RootName' => 'rubac_config', 'NoAttr' => true, 'AttrPrefix' => true } )
+		xml="<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n" + out
+
+		file = File.new(@xml_file, "w")
+		file << xml
+		file.close
+	end
+
+	def add_client(host, includes, excludes, opts)
+		client= {
+			"#{host}" => {
+				'includes' => includes,
+				'excludes' => excludes,
+				'opts' => opts
+			}
+		}
+		@config['clients'].merge!(client)
+	end
+
+	def get_config
+		@config
+	end
+
+	def get_global_conifig
+		@config['globals']
+	end
+
+	def get_host_config(host)
+		if not @config['clients'].has_key?(host)
+			add_client(host, "", "", "")
+		end
+		@config['clients']["#{host}"]
+	end
+
+	# overwrite includes for specified client
+	def set_client_includes(host, inc)
+		get_host_config(host)
+		@config['clients']["#{host}"]['includes'] = inc
+	end
+
+	# overwrite excludes for specified client
+	def set_client_excludes(host, exc)
+		get_host_config(host)
+		@config['clients']["#{host}"]['excludes'] = exc 
+	end
+
+	# overwrite opts for specified client
+	def set_client_opts(host, opts)
+		get_host_config(host)
+		@config['clients']["#{host}"]['opts'] = opts
+	end
+
+	# append (or set) the specified item for the specified client
+	def append_client_key(host, item, key)
+		get_host_config(host)
+		# key can be a comma separated list, should convert to array
+		# and compare all values of the with all values in keys below
+		key.strip!
+		if @config['clients']["#{host}"]["#{item}"].length > 0
+			keys=@config['clients']["#{host}"]["#{item}"].split(",")
+			keys.each do |i|
+				if i == key 
+					puts "Item #{item} already contains #{key}"
+					return @config['clients']["#{host}"]["#{item}"]
+				end
+			end
+			@config['clients']["#{host}"]["#{item}"] << ","
+		end
+		@config['clients']["#{host}"]["#{item}"] << key 
+	end
+
+	# append (or set) includes for specified client
+	def append_client_includes(host, inc)
+		append_client_key(host, "includes", inc)
+	end
+
+	# append (or set) excludes for specified client
+	def append_client_excludes(host, exc)
+		append_client_key(host, "excludes", exc)
+	end
+
+	# append (or set) opts for specified client
+	def append_client_opts(host, opts)
+		append_client_key(host, "opts", opts)
+	end
+end
+
 class Rubac
 	include Szmsg
 
@@ -259,7 +387,7 @@ class Rubac
 	# Performs post-parse processing on options
 	def process_options
 		@options.verbose = false if @options.quiet
-		@options.dbname = File.join(@options.data_dir, @options.profile + ".db");
+		@options.dbname = @options.profile + ".xml"
 	end
 
 	def output_options
@@ -308,24 +436,31 @@ class Rubac
 	end
     
 	def process_command
-		# load database
-		@db = Rubac_db.new(@options.dbname);
 
-		#process_standard_input # [Optional]
-		#
+		cfg = Config_rubac.new
+		cfg.load_xml(@options.dbname, @options.data_dir)
+
+		if @options.global
+		else
+			if @options.include
+				cfg.append_client_includes(@options.client, @options.include)
+			end
+			if @options.exclude
+				cfg.append_client_excludes(@options.client, @options.exclude)
+			end
+			if @options.opts
+				cfg.append_client_opts(@options.client, @options.opts)
+			end
+		end
+
+		#cfg.append_client_includes("linguini", "/data/osd")
+		#cfg.append_client_excludes("linguini", "/data/osd/Etienne")
+		#cfg.append_client_opts("linguini", "--delete-excluded")
+
 		puts "##### #{@options.cmd} #####"
 		if @options.cmd
 			eval @options.cmd
 		else
-			@db.update("globals", "client", @options.client)
-			@db.test
-
-			@cmd="ls -l /home/rubac/linguini/default"
-			puts @cmd
-			listing=`#{@cmd}`
-			p $?.exitstatus
-			puts listing
-
 			# DEST is the backup directory
 			# HOST is the client (localhost or `hostname -s` is considered local)
 			# PROFILE is the name of the profile
@@ -336,13 +471,15 @@ class Rubac
 			# if exists /DEST/HOST/PROFILE/rubac.1 move it to /DEST/HOST/PROFILE/rubac.2
 			# if exists /DEST/HOST/PROFILE/rubac.0 move it to /DEST/HOST/PROFILE/rubac.1
 			# backup to /DEST/HOST/PROFILE/rubac.0
-			a=[]
-			a=(1..5).to_a.reverse
-			a.each do |y|
-				x = y-1
-				puts "mv /DEST/HOST/PROFILE/rubac.#{x} /DEST/HOST/PROFILE/rubac.#{y}"
-			end
+			#a=[]
+			#a=(1..5).to_a.reverse
+			#a.each do |y|
+			#	x = y-1
+			#	puts "mv /DEST/HOST/PROFILE/rubac.#{x} /DEST/HOST/PROFILE/rubac.#{y}"
+			#end
 		end
+
+		cfg.save_xml
 
 	end
 
@@ -361,71 +498,4 @@ rubac = Rubac.new(ARGV, STDIN)
 rubac.burp
 
 p Dir.glob("*")
-
-config = {
-   'globals' => {
-      'version' => {
-         'major' => '0',
-         'minor' => '5',
-         'revision' => "$Rev$"[6..-3]
-      },
-      'opts' => '--delete-excluded',
-      'includes' => '/root,/etc',
-      'excludes' => '*/.thumbnails/,*/.thunderbird/*/ImapMail/,*/.beagle/,*/.mozilla/firefox/*/Cache/,*/.gvfs/,*/.cache/,*/.ccache/,*/.dvdcss/,*/.macromedia/,*/.local/share/Trash/,*/.mcop/,*/.mozilla-*/,*/tmp/'
-   },
-   'clients' => {
-      'client' => {
-         'host' => 'localhost',
-	 'includes' => ''
-      },
-      'client' => {
-         'host' => 'linguini',
-         'includes' => '/home/steeve,/home/lissa,/home/etienne,/data/osd,/data/audio,/data/household'
-      }
-   }
-}
-
-pp config
-
-#doc = REXML::Document.new XmlSimple.xml_out(config, 'AttrPrefix' => true)
-#d = ''
-#doc.write(d)
-#p d
-out = XmlSimple.xml_out(config, { 'RootName' => 'config', 'NoAttr' => true, 'AttrPrefix' => true } )
-puts "##### XML Output\n" + out
-
-xml = <<-XML
-<config>
-<globals>
- <version>
- <major>0</major>
- <minor>5</minor>
- <revision>41</revision>
- </version>
- <opts>--delete-excluded</opts>
- <includes>/root,/etc</includes>
- <excludes>*/.mozilla/firefox/*/Cache/,*/.gvfs/</excludes>
-</globals>
-<clients>
- <client>
-  <host>localhost</host>
-  <includes></includes>
- </client>
- <client>
-  <host>linguini</host>
-  <includes>/home/steeve,/home/lissa,/home/etienne,/data/osd,/data/audio,/data/household</includes>
-  <excludes>*/.thumbnails/,*/.thunderbird/*/ImapMail/,*/.beagle/,*/.mozilla/firefox/*/Cache/,*/.gvfs/,*/.cache/,*/.ccache/,*/.dvdcss/,*/.macromedia/,*/.local/share/Trash/,*/.mcop/,*/.mozilla-*/,*/tmp/
-  </excludes>
- </client>
-</clients>
-</config>
-XML
-
-puts "##### XML Input\n" + xml
-cfg = XmlSimple.xml_in(xml)
-pp cfg
-
-puts "##### XML Output\n"
-out = XmlSimple.xml_out(cfg, { 'RootName' => 'config', 'NoAttr' => true, 'AttrPrefix' => true })
-puts out
 
