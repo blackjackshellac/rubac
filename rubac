@@ -10,7 +10,7 @@
 #   For help use: rubac -h
 #
 # == Options
-#   -G, --global          Apply excludes, options etc., to global profile
+#   -g, --global          Apply excludes, options etc., to global profile
 #   -P, --profile[=NAME]  Apply options only to named backup profile (default is rubac)
 #   -D, --data_dir[=PATH] Database directory 
 #
@@ -41,8 +41,8 @@
 #
 #   Setup and use a default backup
 #
-#   rubac -G -o "--delete-excluded"
-#   rubac -G --data_dir=/etc/rubac
+#   rubac -g -o "--delete-excluded"
+#   rubac -g --data_dir=/etc/rubac
 #   rubac -i "/home/steeve,/home/lissa,/home/etienne" -x "*/.gvfs/"
 #   rubac -x "*/.thumbnails/,*/.thunderbird/*/ImapMail/,*/.beagle/"
 #   rubac -m backupadmin@mail.host
@@ -114,12 +114,13 @@ class Config_rubac
 			'globals' => {
 				'version' => {
 					'major' => '0',
-					'minor' => '5',
+					'minor' => '6',
 					'revision' => "$Rev$"[6..-3]
 				},
-				'opts' => '--delete-excluded',
-				'includes' => '/root,/etc',
-				'excludes' => '*/.thumbnails/,*/.thunderbird/*/ImapMail/,*/.beagle/,*/.mozilla/firefox/*/Cache/,*/.gvfs/,*/.cache/,*/.ccache/,*/.dvdcss/,*/.macromedia/,*/.local/share/Trash/,*/.mcop/,*/.mozilla-*/,*/tmp/'
+				'opts' => '',
+				'includes' => '',
+				'excludes' => '',
+				'dest' => ''
 			},
 			'clients' => {
 				'localhost' => {
@@ -135,9 +136,11 @@ class Config_rubac
 	# load the xml config
 	def load_xml(file, path="./")
 		@xml_file = File.join(path, file)
-		if File.exist?(file)
-			@config = XmlSimple.xml_in(file, 'ForceArray' => false)
+		if File.exist?(@xml_file)
+			puts "Loading #{@xml_file}"
+			@config = XmlSimple.xml_in(@xml_file, 'ForceArray' => false)
 		else
+			puts "Config #{@xml_file} not found, using default"
 			@config = @def_config.to_hash
 		end
 		puts "##### load_xml #{@xml_file}"
@@ -148,6 +151,8 @@ class Config_rubac
 	def save_xml
 		out = XmlSimple.xml_out(@config, { 'RootName' => 'rubac_config', 'NoAttr' => true, 'AttrPrefix' => true } )
 		xml="<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n" + out
+
+		puts out
 
 		file = File.new(@xml_file, "w")
 		file << xml
@@ -169,8 +174,39 @@ class Config_rubac
 		@config
 	end
 
-	def get_global_conifig
+	def get_global_config
 		@config['globals']
+	end
+
+	def append_global_key(item, key)
+		# key can be a comma separated list, should convert to array
+		# and compare all values of the with all values in keys below
+		keys = key.split(",")
+		keys.each { |k| k.strip! }
+		items=@config['globals']["#{item}"].split(",")
+		# merge, removing duplicates
+		items = items | keys
+		@config['globals']["#{item}"] = items.join(",")
+	end
+
+	# add the specified includes to the global include list
+	def append_global_includes(inc)
+		append_global_key("includes", inc)
+	end
+
+	# add the specified excludes to the global exclude list
+	def append_global_excludes(exc)
+		append_global_key("excludes", exc)
+	end
+
+	# add the specified opts to the global opts list
+	def append_global_opts(opts)
+		append_global_key("opts", opts)
+	end
+
+	# set the specified path to the global backup destination
+	def set_global_dest(dest)
+		@config['globals']['dest'] = dest
 	end
 
 	def get_host_config(host)
@@ -203,18 +239,29 @@ class Config_rubac
 		get_host_config(host)
 		# key can be a comma separated list, should convert to array
 		# and compare all values of the with all values in keys below
-		key.strip!
+		keys = key.split(",")
+		keys.each { |k| k.strip! }
+
+		items = []
 		if @config['clients']["#{host}"]["#{item}"].length > 0
-			keys=@config['clients']["#{host}"]["#{item}"].split(",")
-			keys.each do |i|
-				if i == key 
-					puts "Item #{item} already contains #{key}"
-					return @config['clients']["#{host}"]["#{item}"]
-				end
-			end
-			@config['clients']["#{host}"]["#{item}"] << ","
+			items = @config['clients']["#{host}"]["#{item}"].split(",")
 		end
-		@config['clients']["#{host}"]["#{item}"] << key 
+		items = items | keys
+		@config['clients']["#{host}"]["#{item}"] = items.join(",")
+
+		pp @config
+
+		#if @config['clients']["#{host}"]["#{item}"].length > 0
+		#	keys=@config['clients']["#{host}"]["#{item}"].split(",")
+		#	keys.each do |i|
+		#		if i == key 
+		#			puts "Item #{item} already contains #{key}"
+		#			return @config['clients']["#{host}"]["#{item}"]
+		#		end
+		#	end
+		#	@config['clients']["#{host}"]["#{item}"] << ","
+		#end
+		#@config['clients']["#{host}"]["#{item}"] << key 
 	end
 
 	# append (or set) includes for specified client
@@ -285,6 +332,7 @@ class Rubac
 		@options.quiet = false
 		@options.include = nil
 		@options.exclude = nil
+		@options.dest = nil
 		@options.opts = nil
 		@options.run = false
 		@options.cmd = nil
@@ -296,7 +344,7 @@ class Rubac
 	end
 
 	# Parse options, check arguments, then process the command
-	def burp
+	def run 
         
 		if arguments_valid? && parsed_options?
 
@@ -330,15 +378,20 @@ class Rubac
 		opts.on('-V', '--verbose', "Run verbosely")    { @options.verbose = true }  
 		opts.on('-q', '--quiet',   "Run quietly")      { @options.quiet = true }
 
+		opts.on('-g', '--global', "Apply options to the global profile") { @options.global = true }
+
 		opts.on('-cHOST', '--client HOST', "Backup Client hostname") do |host|
+			host.strip!
 			@options.client = host
 		end
 
 		opts.on('-DPATH', '--data_dir PATH', "Database directory") do |dir|
+			dir.strip!
 			@options.data_dir = dir
 		end
 
 		opts.on('-iPATH', '--include PATH', "Add include path") do |inc|
+			inc.strip!
 			if @options.include
 				@options.include = @options.include + ",#{inc}"
 			else
@@ -347,12 +400,19 @@ class Rubac
 		end
 
 		opts.on('-xPATH', '--exclude PATH', "Add exclude path") do |exc|
+			exc.strip!
 			if @options.exclude
 				@options.exclude = @options.exclude + ",#{exc}"
 			else
 				@options.exclude = exc
 			end
 		end
+
+		opts.on('-dPATH', '--dest PATH', "Set backup destination") do |dest|
+			dest.strip!
+			@options.dest = dest
+		end
+
 
 		opts.on('-PNAME', '--profile NAME', "Apply opts to specified profile") do |profile|
 			@options.profile = profile
@@ -437,25 +497,30 @@ class Rubac
     
 	def process_command
 
-		cfg = Config_rubac.new
-		cfg.load_xml(@options.dbname, @options.data_dir)
+		config = Config_rubac.new
+		config.load_xml(@options.dbname, @options.data_dir)
+
+		config.set_global_dest(@options.dest) if @options.dest
 
 		if @options.global
+			config.append_global_includes(@options.include) if @options.include
+			config.append_global_excludes(@options.exclude) if @options.exclude
+			config.append_global_opts(@options.opts) if @options.opts
 		else
 			if @options.include
-				cfg.append_client_includes(@options.client, @options.include)
+				config.append_client_includes(@options.client, @options.include)
 			end
 			if @options.exclude
-				cfg.append_client_excludes(@options.client, @options.exclude)
+				config.append_client_excludes(@options.client, @options.exclude)
 			end
 			if @options.opts
-				cfg.append_client_opts(@options.client, @options.opts)
+				config.append_client_opts(@options.client, @options.opts)
 			end
 		end
 
-		#cfg.append_client_includes("linguini", "/data/osd")
-		#cfg.append_client_excludes("linguini", "/data/osd/Etienne")
-		#cfg.append_client_opts("linguini", "--delete-excluded")
+		#config.append_client_includes("linguini", "/data/osd")
+		#config.append_client_excludes("linguini", "/data/osd/Etienne")
+		#config.append_client_opts("linguini", "--delete-excluded")
 
 		puts "##### #{@options.cmd} #####"
 		if @options.cmd
@@ -479,7 +544,7 @@ class Rubac
 			#end
 		end
 
-		cfg.save_xml
+		config.save_xml
 
 	end
 
@@ -495,7 +560,5 @@ class Rubac
 end
 
 rubac = Rubac.new(ARGV, STDIN)
-rubac.burp
-
-p Dir.glob("*")
+rubac.run
 
