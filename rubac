@@ -593,13 +593,16 @@ class Rubac
 		p @options.profile
 		pdest = File.join(@options.dest, @options.client, @options.profile, "rubac.0")
 
+		FileUtils.mkdir_p(pdest)
+
 		inc = @includes.split(",")
 		inc.each do |i|
 			cmd=%Q(rsync #{@sshopts} #{@useropts})
 			cmd << %Q( --exclude="#{@excludes}") if @excludes.length > 0
 			cmd << %Q( #{i} #{pdest})
 			puts %Q(#{cmd})
-			`#{cmd}`
+			out = %x{#{cmd}}
+			puts out
 		end
 
 		# DEST is the backup directory
