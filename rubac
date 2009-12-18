@@ -11,10 +11,10 @@
 #
 # == Options
 #   -g, --global          Apply excludes, options etc., to global profile
-#   -P, --profile[=NAME]  Apply options only to named backup profile (default is rubac)
+#   -p, --profile[=NAME]  Apply options only to named backup profile (default is rubac)
 #   -D, --data_dir[=PATH] Database directory 
 #
-#   -c, --client[=HOST]   Client to backup (default is local backup)
+#   -c, --client[=HOST]   Client to backup (default is localhost)
 #   -i, --include=PATH    Include path, comma separate multiple paths
 #   -x, --exclude=PATH    Exclude path, comma separate multiple paths
 #   -d, --dest=DEST       Local destination path (eg., /mnt/backup)
@@ -51,8 +51,8 @@
 #   rubac --run
 #
 #   List then backup client esme using the esme profile
-#   rubac -c esme -P esme --list
-#   rubac -c esme -P esme --run
+#   rubac -c esme -p esme --list
+#   rubac -c esme -p esme --run
 #
 #   Should one be able to specify a client using rsync notation,
 #
@@ -67,7 +67,8 @@
 #   RUBAC_DATADIR - set the database directory
 #   RUBAC_PROFILE - set the backup profile to use
 #   RUBAC_CLIENT  - set the client to use
-#   RSYNC_RSH     - ssh command string, defaults to "ssh"
+#   RUBAC_SSHOPTS - set the ssh opts (defaults to -av)
+#   RSYNC_RSH     - ssh command string, defaults to "ssh" here
 #
 # == Author
 #   Steeve McCauley
@@ -137,14 +138,12 @@ class Config_rubac
 	def load_xml(file, path="./")
 		@xml_file = File.join(path, file)
 		if File.exist?(@xml_file)
-			puts "Loading #{@xml_file}"
 			@config = XmlSimple.xml_in(@xml_file, 'ForceArray' => false)
 		else
 			puts "Config #{@xml_file} not found, using default"
 			@config = @def_config.to_hash
 		end
-		puts "##### load_xml #{@xml_file}"
-		pp @config
+		puts "##### load_xml #{@xml_file}" if @debug
 	end
 
 	# save the xml config
@@ -152,11 +151,11 @@ class Config_rubac
 		out = XmlSimple.xml_out(@config, { 'RootName' => 'rubac_config', 'NoAttr' => true, 'AttrPrefix' => true } )
 		xml="<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n" + out
 
-		puts out
-
 		file = File.new(@xml_file, "w")
 		file << xml
 		file.close
+
+		xml
 	end
 
 	def add_client(host, includes, excludes, opts)
@@ -183,7 +182,11 @@ class Config_rubac
 		# and compare all values of the with all values in keys below
 		keys = key.split(",")
 		keys.each { |k| k.strip! }
-		items=@config['globals']["#{item}"].split(",")
+		
+		items = []
+		if @config['globals']["#{item}"].split(",").length > 0
+			items=@config['globals']["#{item}"].split(",")
+		end
 		# merge, removing duplicates
 		items = items | keys
 		@config['globals']["#{item}"] = items.join(",")
@@ -207,6 +210,10 @@ class Config_rubac
 	# set the specified path to the global backup destination
 	def set_global_dest(dest)
 		@config['globals']['dest'] = dest
+	end
+
+	def get_global_dest
+		@config['globals']['dest'].to_s
 	end
 
 	def get_host_config(host)
@@ -249,8 +256,6 @@ class Config_rubac
 		items = items | keys
 		@config['clients']["#{host}"]["#{item}"] = items.join(",")
 
-		pp @config
-
 		#if @config['clients']["#{host}"]["#{item}"].length > 0
 		#	keys=@config['clients']["#{host}"]["#{item}"].split(",")
 		#	keys.each do |i|
@@ -278,6 +283,42 @@ class Config_rubac
 	def append_client_opts(host, opts)
 		append_client_key(host, "opts", opts)
 	end
+
+	def get_client_key(host, key)
+		get_host_config(host)
+
+		inc = []
+		if @config['globals']["#{key}"].length > 0
+			inc = @config['globals']["#{key}"].split(",")
+		end
+
+		if @config['clients']["#{host}"]["#{key}"].length > 0
+			# eliminate duplicates, if any
+			inc = inc | @config['clients']["#{host}"]["#{key}"].split(",")
+		end
+
+		if host != "localhost" and key == "includes"
+			inc.each_index do |i|
+				inc[i] = "#{host}:" + inc[i]
+			end
+		end
+
+		inc.join(",")
+
+	end
+
+	def get_client_includes(host)
+		get_client_key(host, 'includes')
+
+	end
+
+	def get_client_excludes(host)
+		get_client_key(host, 'excludes')
+	end
+
+	def get_client_opts(host)
+		get_client_key(host, 'opts')
+	end
 end
 
 class Rubac
@@ -288,6 +329,22 @@ class Rubac
 	attr_reader :options
 
 	def initialize(arguments, stdin)
+
+		@includes = ""
+		@excludes = ""
+		@useropts = ""
+		# rsync -av --relative --delete --delete-excluded --link-dest=/home/rubac/linguini/default/rubac.1 /home/etienne /home/rubac/linguini/default/rubac.0
+		if ENV['RUBAC_SSHOPTS']
+			@sshopts = ENV['RUBAC_SSHOPTS']
+		else
+			@sshopts = "-av"
+		end
+		@sshopts << " --relative --delete --delete-excluded"
+
+		@rsync_rsh = "ssh"
+		# use the value set in the environment, if set
+		@rsync_rsh = "" if ENV['RSYNC_SSH']
+
 		@arguments = arguments
 		@stdin = stdin
 		@revision = "$Rev$"[6..-3]
@@ -298,11 +355,12 @@ class Rubac
 		@options.profile = "default"
 		@options.dbname = nil
 		
-		begin
-			@options.client = Socket.gethostname
-		rescue
-			@options.client = "localhost"
-		end
+		#begin
+		#	@options.client = Socket.gethostname
+		#rescue
+		#	@options.client = "localhost"
+		#end
+		@options.client = "localhost"
 
 		# 
 		# If /etc/rubac is writable use it as default, otherwise use
@@ -311,13 +369,23 @@ class Rubac
 		if ENV['RUBAC_DATADIR']
 			@options.data_dir = ENV['RUBAC_DATADIR']
 		else
-			if File.writable?("/etc/rubac")
-				@options.data_dir = "/etc/rubac"
+			system_dir = "/etc/rubac"
+			use_local = true
+			begin
+				Dir.mkdir(system_dir)
+				use_local = false
+			rescue Errno::EACCES
+				use_local = true
+			rescue Errno::EEXIST
+				use_local = false
+			end
+
+			if use_local == false and File.writable?(system_dir)
+				@options.data_dir = system_dir
 			else
 				@options.data_dir = File.expand_path("~") + "/.rubac"
 			end
 			ENV['RUBAC_DATADIR'] = @options.data_dir
-
 			info "Data directory is #{@options.data_dir}"
 		end
 
@@ -414,7 +482,7 @@ class Rubac
 		end
 
 
-		opts.on('-PNAME', '--profile NAME', "Apply opts to specified profile") do |profile|
+		opts.on('-pNAME', '--profile NAME', "Apply opts to specified profile") do |profile|
 			@options.profile = profile
 		end
 		# TO DO - add additional options
@@ -468,6 +536,39 @@ class Rubac
 	# Setup the arguments
 	def process_arguments
 		# TO DO - place in local vars, etc
+		@config = Config_rubac.new
+		@config.load_xml(@options.dbname, @options.data_dir)
+
+		@config.set_global_dest(@options.dest) if @options.dest
+		@options.dest = @config.get_global_dest
+
+		if @options.global
+			@config.append_global_includes(@options.include) if @options.include
+			@config.append_global_excludes(@options.exclude) if @options.exclude
+			@config.append_global_opts(@options.opts) if @options.opts
+		else
+			if @options.include
+				@config.append_client_includes(@options.client, @options.include)
+			end
+			if @options.exclude
+				@config.append_client_excludes(@options.client, @options.exclude)
+			end
+			if @options.opts
+				@config.append_client_opts(@options.client, @options.opts)
+			end
+		end
+
+		@xml = @config.save_xml
+		puts @xml if @options.verbose
+
+		@includes=@config.get_client_includes(@options.client)
+		@excludes=@config.get_client_excludes(@options.client)
+		@useropts=@config.get_client_opts(@options.client)
+		@sshopts = "--dry-run " + @sshopts if @options.dry_run
+
+		if not File.exist?(@options.dest)
+			puts "Warning: backup destination not set"
+		end
 	end
     
 	def help_command 
@@ -481,10 +582,56 @@ class Rubac
     
 	def run_command
 		info "run command"
+
+		if @options.dest.length == 0
+			puts "Error: backup destination not set"
+			exit(1)
+		end
+
+		p @options.dest
+		p @options.client
+		p @options.profile
+		pdest = File.join(@options.dest, @options.client, @options.profile, "rubac.0")
+
+		inc = @includes.split(",")
+		inc.each do |i|
+			cmd=%Q(rsync #{@sshopts} #{@useropts})
+			cmd << %Q( --exclude="#{@excludes}") if @excludes.length > 0
+			cmd << %Q( #{i} #{pdest})
+			puts %Q(#{cmd})
+			`#{cmd}`
+		end
+
+		# DEST is the backup directory
+		# HOST is the client (localhost or `hostname -s` is considered local)
+		# PROFILE is the name of the profile
+		#
+		# if exists /DEST/HOST/PROFILE/rubac.4 move it to /DEST/HOST/PROFILE/rubac.5
+		# if exists /DEST/HOST/PROFILE/rubac.3 move it to /DEST/HOST/PROFILE/rubac.4
+		# if exists /DEST/HOST/PROFILE/rubac.2 move it to /DEST/HOST/PROFILE/rubac.3
+		# if exists /DEST/HOST/PROFILE/rubac.1 move it to /DEST/HOST/PROFILE/rubac.2
+		# if exists /DEST/HOST/PROFILE/rubac.0 move it to /DEST/HOST/PROFILE/rubac.1
+		# backup to /DEST/HOST/PROFILE/rubac.0
+		#a=[]
+		#a=(1..5).to_a.reverse
+		#a.each do |y|
+		#	x = y-1
+		#	puts "mv /DEST/HOST/PROFILE/rubac.#{x} /DEST/HOST/PROFILE/rubac.#{y}"
+		#end
 	end
 
 	def list_command
-		info "list command"
+		info "list command for client=#{@options.client}"
+		puts %Q(includes="#{@includes}")
+		puts %Q(excludes="#{@excludes}")
+		puts %Q(user opts="#{@useropts}")
+		puts %Q(ssh opts="#{@sshopts}")
+		if @options.dest.length == 0
+			puts %Q(Warning: backup destination not set)
+		else
+			puts %Q(backup dest="#{@options.dest}")
+		end
+
 	end
 
 	def history_command
@@ -497,54 +644,11 @@ class Rubac
     
 	def process_command
 
-		config = Config_rubac.new
-		config.load_xml(@options.dbname, @options.data_dir)
-
-		config.set_global_dest(@options.dest) if @options.dest
-
-		if @options.global
-			config.append_global_includes(@options.include) if @options.include
-			config.append_global_excludes(@options.exclude) if @options.exclude
-			config.append_global_opts(@options.opts) if @options.opts
-		else
-			if @options.include
-				config.append_client_includes(@options.client, @options.include)
-			end
-			if @options.exclude
-				config.append_client_excludes(@options.client, @options.exclude)
-			end
-			if @options.opts
-				config.append_client_opts(@options.client, @options.opts)
-			end
-		end
-
-		#config.append_client_includes("linguini", "/data/osd")
-		#config.append_client_excludes("linguini", "/data/osd/Etienne")
-		#config.append_client_opts("linguini", "--delete-excluded")
-
 		puts "##### #{@options.cmd} #####"
 		if @options.cmd
 			eval @options.cmd
 		else
-			# DEST is the backup directory
-			# HOST is the client (localhost or `hostname -s` is considered local)
-			# PROFILE is the name of the profile
-			#
-			# if exists /DEST/HOST/PROFILE/rubac.4 move it to /DEST/HOST/PROFILE/rubac.5
-			# if exists /DEST/HOST/PROFILE/rubac.3 move it to /DEST/HOST/PROFILE/rubac.4
-			# if exists /DEST/HOST/PROFILE/rubac.2 move it to /DEST/HOST/PROFILE/rubac.3
-			# if exists /DEST/HOST/PROFILE/rubac.1 move it to /DEST/HOST/PROFILE/rubac.2
-			# if exists /DEST/HOST/PROFILE/rubac.0 move it to /DEST/HOST/PROFILE/rubac.1
-			# backup to /DEST/HOST/PROFILE/rubac.0
-			#a=[]
-			#a=(1..5).to_a.reverse
-			#a.each do |y|
-			#	x = y-1
-			#	puts "mv /DEST/HOST/PROFILE/rubac.#{x} /DEST/HOST/PROFILE/rubac.#{y}"
-			#end
 		end
-
-		config.save_xml
 
 	end
 
