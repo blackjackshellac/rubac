@@ -26,7 +26,7 @@
 #   -s, --syslog          Use syslog for logging [??]
 #
 #   -t, --list            List the includes, excludes, etc., for the named profile
-#   -F, --full            Perform full backup (overwrites rubac.0)
+#   -F, --full            Perform full backup (overwrites rubac.0 ... probably shouldn't be allowed)
 #   -I, --incremental[=N] Number of incremental backups (default is 5)
 #   -n, --dry-run         Perform a trial run of the backup
 #   -R, --run             Run specified profile
@@ -115,19 +115,21 @@ class Config_rubac
 			'globals' => {
 				'version' => {
 					'major' => '0',
-					'minor' => '6',
+					'minor' => '7',
 					'revision' => "$Rev$"[6..-3]
 				},
 				'opts' => '',
 				'includes' => '',
 				'excludes' => '',
-				'dest' => ''
+				'dest' => '',
+				'ninc' => '5'
 			},
 			'clients' => {
 				'localhost' => {
 					'includes' => '',
 					'excludes' => '',
-					'opts' => ''
+					'opts' => '',
+					'ninc' => '5'
 				},
 			}
 		}
@@ -163,7 +165,8 @@ class Config_rubac
 			"#{host}" => {
 				'includes' => includes,
 				'excludes' => excludes,
-				'opts' => opts
+				'opts' => opts,
+				'ninc' => "5"
 			}
 		}
 		@config['clients'].merge!(client)
@@ -205,6 +208,16 @@ class Config_rubac
 	# add the specified opts to the global opts list
 	def append_global_opts(opts)
 		append_global_key("opts", opts)
+	end
+
+	def add_global_ninc
+	end
+
+	def set_global_ninc(ninc)
+		if not @config['globals'].has_key?('ninc')
+			@config['globals'] << { 'ninc' => 5 }
+		end
+		@config['globals']['ninc'] = ninc
 	end
 
 	# set the specified path to the global backup destination
@@ -255,18 +268,6 @@ class Config_rubac
 		end
 		items = items | keys
 		@config['clients']["#{host}"]["#{item}"] = items.join(",")
-
-		#if @config['clients']["#{host}"]["#{item}"].length > 0
-		#	keys=@config['clients']["#{host}"]["#{item}"].split(",")
-		#	keys.each do |i|
-		#		if i == key 
-		#			puts "Item #{item} already contains #{key}"
-		#			return @config['clients']["#{host}"]["#{item}"]
-		#		end
-		#	end
-		#	@config['clients']["#{host}"]["#{item}"] << ","
-		#end
-		#@config['clients']["#{host}"]["#{item}"] << key 
 	end
 
 	# append (or set) includes for specified client
@@ -282,6 +283,12 @@ class Config_rubac
 	# append (or set) opts for specified client
 	def append_client_opts(host, opts)
 		append_client_key(host, "opts", opts)
+	end
+
+	def set_client_ninc(host, ninc)
+		get_host_config(host)
+		h = @config['clients']["#{host}"].to_hash
+		h['ninc'] = ninc
 	end
 
 	def get_client_key(host, key)
@@ -354,6 +361,7 @@ class Rubac
 		@options.global = false
 		@options.profile = "default"
 		@options.dbname = nil
+		@options.ninc = nil
 		
 		#begin
 		#	@options.client = Socket.gethostname
@@ -481,6 +489,16 @@ class Rubac
 			@options.dest = dest
 		end
 
+		opts.on('-IN', '--incremental N', "Set the number of incremental backups") do |ninc|
+			ninc = ninc.to_i
+			if ninc < 0
+				puts "Error: number of incrementals must be greater than or equal to 0"
+			#else if ninc >= 1000
+				puts "Error: maximum number of incremental backups exceeded"
+			else
+				@options.ninc = ninc
+			end
+		end
 
 		opts.on('-pNAME', '--profile NAME', "Apply opts to specified profile") do |profile|
 			@options.profile = profile
@@ -546,6 +564,7 @@ class Rubac
 			@config.append_global_includes(@options.include) if @options.include
 			@config.append_global_excludes(@options.exclude) if @options.exclude
 			@config.append_global_opts(@options.opts) if @options.opts
+			@config.set_global_ninc(@options.ninc) if @options.ninc
 		else
 			if @options.include
 				@config.append_client_includes(@options.client, @options.include)
@@ -555,6 +574,9 @@ class Rubac
 			end
 			if @options.opts
 				@config.append_client_opts(@options.client, @options.opts)
+			end
+			if @options.ninc
+				@config.set_client_ninc(@options.client, @options.ninc)
 			end
 		end
 
@@ -651,6 +673,7 @@ class Rubac
 		if @options.cmd
 			eval @options.cmd
 		else
+			puts "huh?"
 		end
 
 	end
