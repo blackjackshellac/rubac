@@ -210,7 +210,11 @@ class Config_rubac
 		append_global_key("opts", opts)
 	end
 
-	def add_global_ninc
+	def get_global_ninc(ninc)
+		if not @config['globals'].has_key?('ninc')
+			@config['globals'] << { 'ninc' => 5 }
+		end
+		@config['globals']['ninc']
 	end
 
 	def set_global_ninc(ninc)
@@ -361,7 +365,7 @@ class Rubac
 		@options.global = false
 		@options.profile = "default"
 		@options.dbname = nil
-		@options.ninc = nil
+		@options.ninc = 5
 		
 		#begin
 		#	@options.client = Socket.gethostname
@@ -613,15 +617,40 @@ class Rubac
 		p @options.dest
 		p @options.client
 		p @options.profile
-		pdest = File.join(@options.dest, @options.client, @options.profile, "rubac.0")
+		pdest = File.join(@options.dest, @options.client, @options.profile)
 
-		FileUtils.mkdir_p(pdest)
+		first_time = true
+		link_dest = false
+		i = []
+		i = (1..@options.ninc).to_a.reverse
+		i.each do |y|
+			x = y - 1
+			xdest = File.join(pdest, "rubac.#{x}")
+			ydest = File.join(pdest, "rubac.#{y}")
+			if first_time
+				if File.exist?(ydest)
+					FileUtils.rm_r(ydest, :force => true, :verbose => true)
+				end
+				first_time = false
+			end
+			if File.exist?(xdest)
+				FileUtils.mv(xdest, ydest, :verbose => true)
+				link_dest = true
+			end
+		end
+
+		# move out incrementals
+		bdest = File.join(pdest, "rubac.0")
+		ldest = File.join(pdest, "rubac.1")
+
+		FileUtils.mkdir_p(bdest)
 
 		inc = @includes.split(",")
 		inc.each do |i|
 			cmd=%Q(rsync #{@sshopts} #{@useropts})
+			cmd << %Q( --link-dest=#{ldest})
 			cmd << %Q( --exclude="#{@excludes}") if @excludes.length > 0
-			cmd << %Q( #{i} #{pdest})
+			cmd << %Q( #{i} #{bdest})
 			puts %Q(#{cmd})
 			out = %x{#{cmd}}
 			puts out
