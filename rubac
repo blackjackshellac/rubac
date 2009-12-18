@@ -432,7 +432,7 @@ class Rubac
 	end
 
 	def version_command
-		puts "#{File.basename(__FILE__, ".rb")} version #{VERSION}"
+		puts "#{File.basename(__FILE__)} version #{VERSION}"
 	end
     
 	def process_command
