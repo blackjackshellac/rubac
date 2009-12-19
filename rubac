@@ -652,8 +652,20 @@ class Rubac
 			cmd << %Q( --exclude="#{@excludes}") if @excludes.length > 0
 			cmd << %Q( #{i} #{bdest})
 			puts %Q(#{cmd})
-			out = %x{#{cmd}}
-			puts out
+			p = IO.popen(%Q(#{cmd}))
+			while (line = p.gets)
+				print "  ::" + line
+			end
+			## TODO get status of command??
+			status=$?
+			p status
+			#out = %x{#{cmd}}
+			#status = $?.exitstatus
+			#puts out
+			if status and status != 0
+				puts "Error: running command %Q(#{cmd})"
+				exit(status)
+			end
 		end
 
 		# DEST is the backup directory
