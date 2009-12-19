@@ -21,8 +21,8 @@
 #   -m, --mail=EMAIL      Notification email, comma separated list
 #   -o, --opts=OPTS       Extra rsync options
 #
-#   -T, --TMP=PATH        Temporary directory for logging, etc (default is /var/log/rubac)
-#   -l, --log[=NAME]      Name of log file, (default is profile.%run_date%.log)
+#   -L, --logdir=PATH     Directory for logging (root default is /var/log/rubac, otherwise ENV['TMP'])
+#   -l, --log[=NAME]      Name of log file, (default is %profile%.%run_date%.log)
 #   -s, --syslog          Use syslog for logging [??]
 #
 #   -t, --list            List the includes, excludes, etc., for the named profile
@@ -96,6 +96,7 @@ require 'rdoc/usage'
 require 'ostruct'
 require 'date'
 require 'socket'
+require 'tmpdir'
 
 require 'xmlsimple'
 
@@ -122,7 +123,9 @@ class Config_rubac
 				'includes' => '',
 				'excludes' => '',
 				'dest' => '',
-				'ninc' => '5'
+				'ninc' => '5',
+				'logdir' => '',
+				'logname' => ''
 			},
 			'clients' => {
 				'localhost' => {
@@ -363,7 +366,7 @@ class Rubac
 		# Set defaults
 		@options = OpenStruct.new
 		@options.global = false
-		@options.profile = "default"
+		@options.profile = "rubac"
 		@options.dbname = nil
 		@options.ninc = 5
 		
@@ -418,6 +421,19 @@ class Rubac
 		@options.cmd = nil
 		@options.dry_run = false
 
+		@options.tmp = ENV['TMP'].to_s
+		if @options.tmp.length > 0
+			@options.tmp = ENV['TMP']
+		else
+			@options.tmp = Dir.tmpdir
+		end
+
+		if Process.uid == 0
+			@options.logdir = "/var/log/rubac"
+		else
+			@options.logdir = "#{@options.tmp}/rubac"
+		end
+
 		#
 		# TODO - add additional defaults end
 		#
@@ -459,6 +475,26 @@ class Rubac
 		opts.on('-q', '--quiet',   "Run quietly")      { @options.quiet = true }
 
 		opts.on('-g', '--global', "Apply options to the global profile") { @options.global = true }
+
+		opts.on('-LPATH', '--logdir PATH', "Set the log directory") do |dir|
+			if not File.exist?(dir)
+				begin
+					FileUtils.mkdir(dir)
+				rescue Errno::EACCES
+					puts "Error: permission denied creating log dir #{dir}"
+					exit 1
+				rescue
+					puts "Error: creating log dir #{dir}"
+					exit 1
+				end
+			end
+			if File.stat(dir).directory?
+				@options.logdir = dir
+			else
+				puts "Error: #{dir} is not a directory"
+				exit 1
+			end
+		end
 
 		opts.on('-cHOST', '--client HOST', "Backup Client hostname") do |host|
 			host.strip!
@@ -590,7 +626,7 @@ class Rubac
 		@includes=@config.get_client_includes(@options.client)
 		@excludes=@config.get_client_excludes(@options.client)
 		@useropts=@config.get_client_opts(@options.client)
-		@sshopts = "--dry-run " + @sshopts if @options.dry_run
+		@sshopts = "--dry-run #{@sshopts}" if @options.dry_run
 
 		if not File.exist?(@options.dest)
 			puts "Warning: backup destination not set"
@@ -697,7 +733,6 @@ class Rubac
 		else
 			puts %Q(backup dest="#{@options.dest}")
 		end
-
 	end
 
 	def history_command
