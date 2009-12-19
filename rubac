@@ -129,11 +129,12 @@ class Config_rubac
 			},
 			'clients' => {
 				'localhost' => {
+					'host' => '',
 					'includes' => '',
 					'excludes' => '',
 					'opts' => '',
 					'ninc' => '5'
-				},
+				}
 			}
 		}
 		@config = {}
@@ -211,6 +212,13 @@ class Config_rubac
 	# add the specified opts to the global opts list
 	def append_global_opts(opts)
 		append_global_key("opts", opts)
+	end
+
+	def get_global_key_value(key, default = "")
+		if not @config['globals'].has_key?("#{key}")
+			@config['globals']["#{key}"] = default
+		end
+		@config['globals']["#{key}"]
 	end
 
 	def get_global_ninc(ninc)
@@ -370,6 +378,10 @@ class Rubac
 		@options.dbname = nil
 		@options.ninc = 5
 		
+		# hn = Socket.gethostname
+		# "lingini.home"
+		# hna = Socket.gethostbyname(hn)
+		# ["linguini.home", [], 2, "\300\250\001o"]
 		#begin
 		#	@options.client = Socket.gethostname
 		#rescue
@@ -619,6 +631,8 @@ class Rubac
 				@config.set_client_ninc(@options.client, @options.ninc)
 			end
 		end
+
+		@config.get_global_key_value('testkey', "howdy")
 
 		@xml = @config.save_xml
 		puts @xml if @options.verbose
