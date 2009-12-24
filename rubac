@@ -176,12 +176,18 @@ class Config_rubac
 		@config['clients'].merge!(client)
 	end
 
+	def version
+		@config['globals']['version']['major'] + "." +
+		@config['globals']['version']['minor'] + "." +
+		@config['globals']['version']['revision']
+	end
+
 	def get_config
-		@config
+		@config.to_hash
 	end
 
 	def get_global_config
-		@config['globals']
+		@config['globals'].to_hash
 	end
 
 	def append_global_key(item, key)
@@ -417,7 +423,6 @@ class Rubac
 				@options.data_dir = File.expand_path("~") + "/.rubac"
 			end
 			ENV['RUBAC_DATADIR'] = @options.data_dir
-			puts "Data directory is #{@options.data_dir}"
 		end
 
 		begin
@@ -661,8 +666,6 @@ class Rubac
 	end
     
 	def run_command
-		puts "run command"
-
 		if @options.dest.length == 0
 			puts "Error: backup destination not set"
 			exit(1)
@@ -741,6 +744,7 @@ class Rubac
 	end
 
 	def list_command_client(client)
+		puts "##### #{cli} #####"
 		inc = @config.get_client_includes(client)
 		exc = @config.get_client_excludes(client)
 		opt = @config.get_client_opts(client)
@@ -760,7 +764,6 @@ class Rubac
 		if @options.client == "localhost"
 			clients = @config.get_clients
 			clients.each_key do |cli|
-				puts "##### #{cli} #####"
 				list_command_client(cli)
 			end
 		else
@@ -773,12 +776,13 @@ class Rubac
 	end
 
 	def version_command
-		puts "#{File.basename(__FILE__)} version #{VERSION}"
+		ver = @config.version
+		puts "#{File.basename(__FILE__)} version " + ver
 	end
     
 	def process_command
 
-		puts "##### #{@options.cmd} #####"
+		#puts "##### #{@options.cmd} #####"
 		if @options.cmd
 			eval @options.cmd
 		else
