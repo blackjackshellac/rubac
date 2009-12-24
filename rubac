@@ -100,8 +100,8 @@ require 'tmpdir'
 
 require 'xmlsimple'
 
-require 'rubac_db'
-require 'szmsg'
+#require 'rubac_db'
+#require 'szmsg'
 
 #
 # rsync version must be at least 2.5.6 for --link-dest option
@@ -306,6 +306,10 @@ class Config_rubac
 		h['ninc'] = ninc
 	end
 
+	def get_clients
+		@config['clients'].to_hash
+	end
+
 	def get_client_key(host, key)
 		get_host_config(host)
 
@@ -344,7 +348,7 @@ class Config_rubac
 end
 
 class Rubac
-	include Szmsg
+	#include Szmsg
 
 	VERSION = '0.0.1'
 
@@ -413,7 +417,7 @@ class Rubac
 				@options.data_dir = File.expand_path("~") + "/.rubac"
 			end
 			ENV['RUBAC_DATADIR'] = @options.data_dir
-			info "Data directory is #{@options.data_dir}"
+			puts "Data directory is #{@options.data_dir}"
 		end
 
 		begin
@@ -657,7 +661,7 @@ class Rubac
 	end
     
 	def run_command
-		info "run command"
+		puts "run command"
 
 		if @options.dest.length == 0
 			puts "Error: backup destination not set"
@@ -736,21 +740,36 @@ class Rubac
 		#end
 	end
 
+	def list_command_client(client)
+		inc = @config.get_client_includes(client)
+		exc = @config.get_client_excludes(client)
+		opt = @config.get_client_opts(client)
+		puts %Q(   includes  ="#{inc}")
+		puts %Q(   excludes  ="#{exc}")
+		puts %Q(   user opts ="#{opt}")
+	end
+
 	def list_command
-		info "list command for client=#{@options.client}"
-		puts %Q(includes="#{@includes}")
-		puts %Q(excludes="#{@excludes}")
-		puts %Q(user opts="#{@useropts}")
-		puts %Q(ssh opts="#{@sshopts}")
 		if @options.dest.length == 0
-			puts %Q(Warning: backup destination not set)
+			puts %Q(   *** Warning: backup destination not set)
 		else
-			puts %Q(backup dest="#{@options.dest}")
+			puts %Q(   dest      ="#{@options.dest}")
+		end
+		puts %Q(   ssh opts  ="#{@sshopts}"\n)
+
+		if @options.client == "localhost"
+			clients = @config.get_clients
+			clients.each_key do |cli|
+				puts "##### #{cli} #####"
+				list_command_client(cli)
+			end
+		else
+			list_command_client(@options.client)
 		end
 	end
 
 	def history_command
-		info "history command"
+		puts "history command"
 	end
 
 	def version_command
