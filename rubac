@@ -19,6 +19,7 @@
 #   -x, --exclude=PATH    Exclude path, comma separate multiple paths
 #   -d, --dest=DEST       Local destination path (eg., /mnt/backup)
 #   -m, --mail=EMAIL      Notification email, comma separated list
+#   -S, --smtp=SERVER     IP Address of smtp server (default is localhost)
 #   -o, --opts=OPTS       Extra rsync options
 #
 #   -L, --logdir=PATH     Directory for logging (root default is /var/log/rubac, otherwise ENV['TMP'])
@@ -93,12 +94,34 @@
 
 require 'optparse' 
 require 'rdoc/usage'
+require 'net/smtp'
 require 'ostruct'
 require 'date'
 require 'socket'
 require 'tmpdir'
 
 require 'xmlsimple'
+
+require 'net/smtp'
+ 
+def address_email(addr, name="")
+	eaddr = { :name => name, :addr => addr }
+	eaddr.to_hash
+end
+
+def send_email(from, to, subject, body, server='localhost')
+	msg = <<END_OF_MESSAGE
+From: #{from[:name]} <#{from[:addr]}>
+To: #{to[:name]} <#{to[:addr]}>
+Subject: #{subject}
+ 
+#{body}
+END_OF_MESSAGE
+ 
+	Net::SMTP.start(server) do |smtp|
+		smtp.send_message msg, from[:addr], to[:addr]
+	end
+end
 
 #require 'rubac_db'
 #require 'szmsg'
@@ -125,7 +148,9 @@ class Config_rubac
 				'dest' => '',
 				'ninc' => '5',
 				'logdir' => '',
-				'logname' => ''
+				'logname' => '',
+				'email' => '',
+				'smtp' => 'localhost'
 			},
 			'clients' => {
 				'localhost' => {
@@ -441,6 +466,7 @@ class Rubac
 		@options.run = false
 		@options.cmd = nil
 		@options.dry_run = false
+		@options.email = nil
 
 		@options.tmp = ENV['TMP'].to_s
 		if @options.tmp.length > 0
@@ -548,6 +574,10 @@ class Rubac
 		opts.on('-dPATH', '--dest PATH', "Set backup destination") do |dest|
 			dest.strip!
 			@options.dest = dest
+		end
+
+		opts.on('-mLIST', '--mail LIST', "Email notification list") do |email|
+			@options.email = email
 		end
 
 		opts.on('-IN', '--incremental N', "Set the number of incremental backups") do |ninc|
@@ -780,6 +810,13 @@ class Rubac
 		else
 			list_command_client(@options.client)
 		end
+
+		to = address_email("steeve.mccauley@gmail.com", "Steeve McCauley")
+		from = address_email("rubac@linguini.home", "Rubac Backup User")
+		subject = "Rubac Test"
+		body = "This is a test email\nThis is the second line\nThis is the last line\n"
+
+		send_email(from, to, subject, body, "relais.videotron.ca")
 	end
 
 	def history_command
