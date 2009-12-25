@@ -11,10 +11,10 @@
 #
 # == Options
 #   -g, --global          Apply excludes, options etc., to global profile
-#   -p, --profile[=NAME]  Apply options only to named backup profile (default is rubac)
-#   -D, --data_dir[=PATH] Database directory 
+#   -p, --profile=NAME    Apply options only to named backup profile (default is rubac)
+#   -D, --data_dir=PATH   Configuration directory (if root /etc/rubac otherwise ~/.rubac)
 #
-#   -c, --client[=HOST]   Client to backup (default is localhost)
+#   -c, --client=HOST     Client to backup (default is localhost)
 #   -i, --include=PATH    Include path, comma separate multiple paths
 #   -x, --exclude=PATH    Exclude path, comma separate multiple paths
 #   -d, --dest=DEST       Local destination path (eg., /mnt/backup)
@@ -743,23 +743,34 @@ class Rubac
 		#end
 	end
 
+	def list_command_client_key(client, key, delim=",")
+		inc = @config.get_client_key(client, key)
+		return if inc.length == 0
+		inc = inc.split("#{delim}")
+		printf "%10s=\n", key
+		inc.each do |i|
+			printf "\t%-12s\n", i
+		end
+		puts ""
+	end
+
 	def list_command_client(client)
-		puts "##### #{cli} #####"
-		inc = @config.get_client_includes(client)
-		exc = @config.get_client_excludes(client)
-		opt = @config.get_client_opts(client)
-		puts %Q(   includes  ="#{inc}")
-		puts %Q(   excludes  ="#{exc}")
-		puts %Q(   user opts ="#{opt}")
+		puts "##### #{client} #####"
+		list_command_client_key(client, 'includes')
+		list_command_client_key(client, 'excludes')
+		list_command_client_key(client, 'opts', " ")
 	end
 
 	def list_command
+		puts "##### Global settings #####"
+		printf "%10s=%s\n", "profile", @options.profile
 		if @options.dest.length == 0
 			puts %Q(   *** Warning: backup destination not set)
 		else
-			puts %Q(   dest      ="#{@options.dest}")
+			printf %Q(%10s=%s\n), "dest", @options.dest
 		end
-		puts %Q(   ssh opts  ="#{@sshopts}"\n)
+		printf %Q(%10s=%s\n), "ssh opts", @sshopts
+		printf %Q(\n)
 
 		if @options.client == "localhost"
 			clients = @config.get_clients
