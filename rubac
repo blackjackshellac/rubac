@@ -103,14 +103,15 @@ require 'tmpdir'
 require 'xmlsimple'
 
 require 'net/smtp'
- 
-def address_email(addr, name="")
-	eaddr = { :name => name, :addr => addr }
-	eaddr.to_hash
-end
 
-def send_email(from, to, subject, body, server='localhost')
-	msg = <<END_OF_MESSAGE
+class Email
+	def address_email(addr, name="")
+		eaddr = { :name => name, :addr => addr }
+		eaddr.to_hash
+	end
+
+	def send_email(from, to, subject, body, server='localhost')
+		msg = <<END_OF_MESSAGE
 From: #{from[:name]} <#{from[:addr]}>
 To: #{to[:name]} <#{to[:addr]}>
 Subject: #{subject}
@@ -118,11 +119,82 @@ Subject: #{subject}
 #{body}
 END_OF_MESSAGE
  
-	Net::SMTP.start(server) do |smtp|
-		smtp.send_message msg, from[:addr], to[:addr]
+		Net::SMTP.start(server) do |smtp|
+			smtp.send_message msg, from[:addr], to[:addr]
+		end
 	end
 end
 
+module SzMsg
+	@console = true
+	@syslog = false
+	@privlog = true
+	@notify = false
+	@loglevels = {	"emerg"  => 0,
+			"alert"  => 1,
+			"crit"   => 2,
+			"err"    => 3,
+			"warn"   => 4,
+			"notice" => 5,
+			"info"   => 6,
+			"debug"  => 7 }
+	# default log level
+	@loglevel = @loglevels["info"]
+
+	def level(lvl)
+		if @loglevels[lvl].has_key?
+			@loglevel = @loglevels[lvl]
+		else
+			@loglevel = @loglevels["info"]
+			err "Unknown log level"
+		end
+	end
+
+	def message(msg, level)
+		# console
+		# syslog
+		# private log
+		# notification
+		return if @loglevels[level] > @loglevel
+		print "#{msg}\n" if @console
+		notify_buffer << msg if @notify
+	end
+
+	def printf(fmt, msg)
+		sprintf(msg, fmt, msg)
+		message(msg, "info")
+	end
+
+	def info(msg)
+		message(msg, "info")
+	end
+
+	def warning(msg)
+		msg = "Warning: #{msg}"
+		message(msg, "warn")
+	end
+
+	def err(msg)
+		msg = "Error: #{msg}"
+		message(msg, "err")
+	end
+
+	def debug(msg)
+		msg = "Debug: #{msg}"
+		message(msg, "debug")
+	end
+
+	def alert(msg)
+		msg = "Alert: #{msg}"
+		message(msg, "alert")
+	end
+
+	def die(msg, e=1)
+		alert(msg)
+		exit e
+	end
+end
+ 
 #require 'rubac_db'
 #require 'szmsg'
 
@@ -769,23 +841,6 @@ class Rubac
 				exit(status)
 			end
 		end
-
-		# DEST is the backup directory
-		# HOST is the client (localhost or `hostname -s` is considered local)
-		# PROFILE is the name of the profile
-		#
-		# if exists /DEST/HOST/PROFILE/rubac.4 move it to /DEST/HOST/PROFILE/rubac.5
-		# if exists /DEST/HOST/PROFILE/rubac.3 move it to /DEST/HOST/PROFILE/rubac.4
-		# if exists /DEST/HOST/PROFILE/rubac.2 move it to /DEST/HOST/PROFILE/rubac.3
-		# if exists /DEST/HOST/PROFILE/rubac.1 move it to /DEST/HOST/PROFILE/rubac.2
-		# if exists /DEST/HOST/PROFILE/rubac.0 move it to /DEST/HOST/PROFILE/rubac.1
-		# backup to /DEST/HOST/PROFILE/rubac.0
-		#a=[]
-		#a=(1..5).to_a.reverse
-		#a.each do |y|
-		#	x = y-1
-		#	puts "mv /DEST/HOST/PROFILE/rubac.#{x} /DEST/HOST/PROFILE/rubac.#{y}"
-		#end
 	end
 
 	def list_command_client_key(client, key, delim=",")
@@ -808,8 +863,10 @@ class Rubac
 
 	def list_command
 
-		puts "##### Configuration #####"
-		puts "#{@xml}\n" if @options.verbose
+		if @options.verbose
+			puts "##### Configuration #####"
+			puts "#{@xml}\n"
+		end
 
 		puts "##### Global settings #####"
 		printf "%10s=%s\n", "profile", @options.profile
@@ -830,12 +887,11 @@ class Rubac
 			list_command_client(@options.client)
 		end
 
-		to = address_email("steeve.mccauley@gmail.com", "Steeve McCauley")
-		from = address_email("rubac@linguini.home", "Rubac Backup User")
-		subject = "Rubac Test"
-		body = "This is a test email\nThis is the second line\nThis is the last line\n"
-
-		send_email(from, to, subject, body, "relais.videotron.ca")
+		#to = address_email("steeve.mccauley@gmail.com", "Steeve McCauley")
+		#from = address_email("rubac@linguini.home", "Rubac Backup User")
+		#subject = "Rubac Test"
+		#body = "This is a test email\nThis is the second line\nThis is the last line\n"
+		#send_email(from, to, subject, body, "relais.videotron.ca")
 	end
 
 	def history_command
