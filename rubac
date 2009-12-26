@@ -29,8 +29,8 @@
 #   -t, --list            List the includes, excludes, etc., for the named profile
 #   -F, --full            Perform full backup (overwrites rubac.0 ... probably shouldn't be allowed)
 #   -I, --incremental[=N] Number of incremental backups (default is 5)
+#   -r, --run             Run specified profile
 #   -n, --dry-run         Perform a trial run of the backup
-#   -R, --run             Run specified profile
 #
 #   -H, --history         Backup history
 #   -h, --help            Displays help message
@@ -68,7 +68,7 @@
 #   RUBAC_DATADIR - set the database directory
 #   RUBAC_PROFILE - set the backup profile to use
 #   RUBAC_CLIENT  - set the client to use
-#   RUBAC_SSHOPTS - set the ssh opts (defaults to -av)
+#   RUBAC_SSHOPTS - set the ssh opts (defaults to -a)
 #   RSYNC_RSH     - ssh command string, defaults to "ssh" here
 #
 # == Author
@@ -192,6 +192,7 @@ class Config_rubac
 	def add_client(host, includes, excludes, opts)
 		client= {
 			"#{host}" => {
+				'host' => host,
 				'includes' => includes,
 				'excludes' => excludes,
 				'opts' => opts,
@@ -275,7 +276,7 @@ class Config_rubac
 		@config['globals']['dest'].to_s
 	end
 
-	def get_host_config(host)
+	def get_client_config(host)
 		if not @config['clients'].has_key?(host)
 			add_client(host, "", "", "")
 		end
@@ -284,25 +285,31 @@ class Config_rubac
 
 	# overwrite includes for specified client
 	def set_client_includes(host, inc)
-		get_host_config(host)
+		get_client_config(host)
 		@config['clients']["#{host}"]['includes'] = inc
 	end
 
 	# overwrite excludes for specified client
 	def set_client_excludes(host, exc)
-		get_host_config(host)
+		get_client_config(host)
 		@config['clients']["#{host}"]['excludes'] = exc 
 	end
 
 	# overwrite opts for specified client
 	def set_client_opts(host, opts)
-		get_host_config(host)
+		get_client_config(host)
 		@config['clients']["#{host}"]['opts'] = opts
+	end
+
+	# overwrite number of incrementals value for specified host
+	def set_client_ninc(host, ninc)
+		get_client_config(host)
+		@config['clients']["#{host}"]['ninc'] = ninc
 	end
 
 	# append (or set) the specified item for the specified client
 	def append_client_key(host, item, key)
-		get_host_config(host)
+		get_client_config(host)
 		# key can be a comma separated list, should convert to array
 		# and compare all values of the with all values in keys below
 		keys = key.split(",")
@@ -331,18 +338,14 @@ class Config_rubac
 		append_client_key(host, "opts", opts)
 	end
 
-	def set_client_ninc(host, ninc)
-		get_host_config(host)
-		h = @config['clients']["#{host}"].to_hash
-		h['ninc'] = ninc
-	end
-
 	def get_clients
 		@config['clients'].to_hash
 	end
 
-	def get_client_key(host, key)
-		get_host_config(host)
+	# get the specified key value from globals and clients
+	# and return a comma delimited list
+	def get_client_key(host, key, delim=",")
+		get_client_config(host)
 
 		inc = []
 		if @config['globals']["#{key}"].length > 0
@@ -351,7 +354,7 @@ class Config_rubac
 
 		if @config['clients']["#{host}"]["#{key}"].length > 0
 			# eliminate duplicates, if any
-			inc = inc | @config['clients']["#{host}"]["#{key}"].split(",")
+			inc = inc | @config['clients']["#{host}"]["#{key}"].split(delim)
 		end
 
 		if host != "localhost" and key == "includes"
@@ -360,7 +363,7 @@ class Config_rubac
 			end
 		end
 
-		inc.join(",")
+		inc.join(delim)
 
 	end
 
@@ -374,7 +377,7 @@ class Config_rubac
 	end
 
 	def get_client_opts(host)
-		get_client_key(host, 'opts')
+		get_client_key(host, 'opts', " ")
 	end
 end
 
@@ -390,11 +393,11 @@ class Rubac
 		@includes = ""
 		@excludes = ""
 		@useropts = ""
-		# rsync -av --relative --delete --delete-excluded --link-dest=/home/rubac/linguini/default/rubac.1 /home/etienne /home/rubac/linguini/default/rubac.0
+		# rsync -a --relative --delete --delete-excluded --link-dest=/home/rubac/linguini/default/rubac.1 /home/etienne /home/rubac/linguini/default/rubac.0
 		if ENV['RUBAC_SSHOPTS']
 			@sshopts = ENV['RUBAC_SSHOPTS']
 		else
-			@sshopts = "-av"
+			@sshopts = "-a"
 		end
 		@sshopts << " --relative --delete --delete-excluded"
 
@@ -599,18 +602,23 @@ class Rubac
 		opts.on('-n', '--dry-run', "Perform a trial run of the backup") do
 			@options.dry_run = true
 		end
+
 		opts.on('-h', '--help',    "Print help") do   #   { output_help }
 			set_command("help")
 		end
+
 		opts.on('-r', '--run', "Run the backup") do
 			set_command("run")
 		end
+
 		opts.on('-t', '--list', "List the backup options") do
 			set_command("list")
 		end
+
 		opts.on('-H', '--history', "Backup history") do
 			set_command("history")
 		end
+
 		opts.on('-v', '--version', "Print version") do
 			set_command("version")
 		end
@@ -674,12 +682,12 @@ class Rubac
 		@config.get_global_key_value('testkey', "howdy")
 
 		@xml = @config.save_xml
-		puts @xml if @options.verbose
 
-		@includes=@config.get_client_includes(@options.client)
-		@excludes=@config.get_client_excludes(@options.client)
-		@useropts=@config.get_client_opts(@options.client)
-		@sshopts = "--dry-run #{@sshopts}" if @options.dry_run
+		@includes = @config.get_client_includes(@options.client)
+		@excludes = @config.get_client_excludes(@options.client)
+		@useropts = @config.get_client_opts(@options.client)
+		@sshopts  << " --dry-run" if @options.dry_run
+		@sshopts  << " --verbose" if @options.verbose
 
 		if not File.exist?(@options.dest)
 			puts "Warning: backup destination not set"
@@ -706,6 +714,13 @@ class Rubac
 		p @options.profile
 		pdest = File.join(@options.dest, @options.client, @options.profile)
 
+		rm_flags = { :force => true, :verbose => true }
+		mv_flags = { :verbose => true }
+		if @options.dry_run 
+			rm_flags.merge!( :noop => true )
+			mv_flags.merge!( :noop => true )
+		end
+
 		first_time = true
 		link_dest = false
 		i = []
@@ -716,12 +731,12 @@ class Rubac
 			ydest = File.join(pdest, "rubac.#{y}")
 			if first_time
 				if File.exist?(ydest)
-					FileUtils.rm_r(ydest, :force => true, :verbose => true)
+					FileUtils.rm_r(ydest, rm_flags)
 				end
 				first_time = false
 			end
 			if File.exist?(xdest)
-				FileUtils.mv(xdest, ydest, :verbose => true)
+				FileUtils.mv(xdest, ydest, mv_flags)
 				link_dest = true
 			end
 		end
@@ -734,7 +749,7 @@ class Rubac
 
 		inc = @includes.split(",")
 		inc.each do |i|
-			cmd=%Q(rsync #{@sshopts} #{@useropts})
+			cmd =  %Q(rsync #{@sshopts} #{@useropts})
 			cmd << %Q( --link-dest=#{ldest})
 			cmd << %Q( --exclude="#{@excludes}") if @excludes.length > 0
 			cmd << %Q( #{i} #{bdest})
@@ -774,7 +789,7 @@ class Rubac
 	end
 
 	def list_command_client_key(client, key, delim=",")
-		inc = @config.get_client_key(client, key)
+		inc = @config.get_client_key(client, key, delim)
 		return if inc.length == 0
 		inc = inc.split("#{delim}")
 		printf "%10s=\n", key
@@ -792,6 +807,10 @@ class Rubac
 	end
 
 	def list_command
+
+		puts "##### Configuration #####"
+		puts "#{@xml}\n" if @options.verbose
+
 		puts "##### Global settings #####"
 		printf "%10s=%s\n", "profile", @options.profile
 		if @options.dest.length == 0
