@@ -484,10 +484,15 @@ class Rubac
 		# Set defaults
 		@options = OpenStruct.new
 		@options.global = false
-		@options.profile = "rubac"
 		@options.dbname = nil
 		@options.ninc = 5
 		
+		if ENV['RUBAC_PROFILE'] and ENV['RUBAC_PROFILE'].length > 0
+			@options.profile = ENV['RUBAC_PROFILE']
+		else
+			@options.profile = "rubac"
+		end
+
 		# hn = Socket.gethostname
 		# "lingini.home"
 		# hna = Socket.gethostbyname(hn)
@@ -497,7 +502,11 @@ class Rubac
 		#rescue
 		#	@options.client = "localhost"
 		#end
-		@options.client = "localhost"
+		if ENV['RUBAC_CLIENT'] and ENV['RUBAC_CLIENT'].length > 0
+			@options.client = ENV['RUBAC_CLIENT']
+		else
+			@options.client = "localhost"
+		end
 
 		# 
 		# If /etc/rubac is writable use it as default, otherwise use
@@ -759,7 +768,7 @@ class Rubac
 		@excludes = @config.get_client_excludes(@options.client)
 		@useropts = @config.get_client_opts(@options.client)
 		@sshopts  << " --dry-run" if @options.dry_run
-		@sshopts  << " --verbose" if @options.verbose
+		@sshopts  << " --verbose" # if @options.verbose
 
 		if not File.exist?(@options.dest)
 			puts "Warning: backup destination not set"
@@ -774,18 +783,11 @@ class Rubac
 	def usage_command
 		RDoc::usage('usage') # gets usage from comments above
 	end
-    
-	def run_command
-		if @options.dest.length == 0
-			puts "Error: backup destination not set"
-			exit(1)
-		end
+ 
+	def run_command_snapshot
+	end
 
-		p @options.dest
-		p @options.client
-		p @options.profile
-		pdest = File.join(@options.dest, @options.client, @options.profile)
-
+	def run_command_prep_linkdest(pdest)
 		rm_flags = { :force => true, :verbose => true }
 		mv_flags = { :verbose => true }
 		if @options.dry_run 
@@ -813,6 +815,41 @@ class Rubac
 			end
 		end
 
+
+	end
+
+	def run_command_rsync(inc, bdest, ldest)
+		cmd =  %Q(rsync #{@sshopts} #{@useropts})
+		cmd << %Q( --link-dest=#{ldest})
+		cmd << %Q( --exclude="#{@excludes}") if @excludes.length > 0
+		cmd << %Q( #{inc} #{bdest})
+		puts %Q(#{cmd})
+		p = IO.popen(%Q(#{cmd}))
+		while (line = p.gets)
+			print "  ::" + line
+		end
+		## TODO get status of command??
+		status=$?
+		p status
+		#out = %x{#{cmd}}
+		#status = $?.exitstatus
+		#puts out
+		if status and status != 0
+			puts "Error: running command %Q(#{cmd})"
+			exit(status)
+		end
+	end
+
+	def run_command
+		if @options.dest.length == 0
+			puts "Error: backup destination not set"
+			exit(1)
+		end
+
+		pdest = File.join(@options.dest, @options.client, @options.profile)
+
+		run_command_prep_linkdest(pdest)
+
 		# move out incrementals
 		bdest = File.join(pdest, "rubac.0")
 		ldest = File.join(pdest, "rubac.1")
@@ -821,25 +858,9 @@ class Rubac
 
 		inc = @includes.split(",")
 		inc.each do |i|
-			cmd =  %Q(rsync #{@sshopts} #{@useropts})
-			cmd << %Q( --link-dest=#{ldest})
-			cmd << %Q( --exclude="#{@excludes}") if @excludes.length > 0
-			cmd << %Q( #{i} #{bdest})
-			puts %Q(#{cmd})
-			p = IO.popen(%Q(#{cmd}))
-			while (line = p.gets)
-				print "  ::" + line
-			end
-			## TODO get status of command??
-			status=$?
-			p status
-			#out = %x{#{cmd}}
-			#status = $?.exitstatus
-			#puts out
-			if status and status != 0
-				puts "Error: running command %Q(#{cmd})"
-				exit(status)
-			end
+
+			run_command_rsync(i, bdest, ldest)
+
 		end
 	end
 
