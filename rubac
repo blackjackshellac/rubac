@@ -24,12 +24,13 @@
 #
 #   -L, --logdir=PATH     Directory for logging (root default is /var/log/rubac, otherwise ENV['TMP'])
 #   -l, --log[=NAME]      Name of log file, (default is %profile%.%run_date%.log)
-#   -s, --syslog          Use syslog for logging [??]
+#   -y, --syslog          Use syslog for logging [??]
 #
 #   -t, --list            List the includes, excludes, etc., for the named profile
 #   -F, --full            Perform full backup (overwrites rubac.0 ... probably shouldn't be allowed)
 #   -I, --incremental[=N] Number of incremental backups (default is 5)
 #   -r, --run             Run specified profile
+#   -s, --snapshot=NAME   Created a snapshot based on rubac.0
 #   -n, --dry-run         Perform a trial run of the backup
 #
 #   -H, --history         Backup history
@@ -547,6 +548,7 @@ class Rubac
 		@options.exclude = nil
 		@options.dest = nil
 		@options.opts = nil
+		@options.snapshot = nil
 		@options.run = false
 		@options.cmd = nil
 		@options.dry_run = false
@@ -692,6 +694,11 @@ class Rubac
 			set_command("run")
 		end
 
+		opts.on('-sNAME', '--snapshot NAME', "Perform a snapshot backup") do |name|
+			@options.snapshot = File.basename(name)
+			set_command("snapshot")
+		end
+
 		opts.on('-t', '--list', "List the backup options") do
 			set_command("list")
 		end
@@ -787,6 +794,27 @@ class Rubac
 	def run_command_snapshot
 	end
 
+	def run_command_prep_snapshot(pdest, snapshot)
+		sdest = File.join(pdest, snapshot)
+		bdest = File.join(pdest, "rubac.0")
+
+		if File.exist?(sdest)
+			puts "Error: snapshot destination exists: #{sdest}"
+			exit(1)
+		end	
+
+		if not File.exist?(bdest)
+			puts "Error: at least one backup is required to take a snapshot"
+			exit(1)
+		end
+
+		mv_flags = { :verbose => true }
+		if @options.dry_run 
+			mv_flags.merge!( :noop => true )
+		end
+		FileUtils.mv( bdest, sdest, mv_flags )
+	end
+
 	def run_command_prep_linkdest(pdest)
 		rm_flags = { :force => true, :verbose => true }
 		mv_flags = { :verbose => true }
@@ -847,10 +875,13 @@ class Rubac
 		end
 
 		pdest = File.join(@options.dest, @options.client, @options.profile)
+		if @options.snapshot
+			run_command_prep_snapshot(pdest, @options.snapshot)
+		else
+			# move out incrementals
+			run_command_prep_linkdest(pdest)
+		end
 
-		run_command_prep_linkdest(pdest)
-
-		# move out incrementals
 		bdest = File.join(pdest, "rubac.0")
 		ldest = File.join(pdest, "rubac.1")
 
@@ -862,6 +893,11 @@ class Rubac
 			run_command_rsync(i, bdest, ldest)
 
 		end
+	end
+
+	def snapshot_command
+		puts "##### Snapshot=#{@options.snapshot} #####"
+		run_command
 	end
 
 	def list_command_client_key(client, key, delim=",")
