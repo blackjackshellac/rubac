@@ -71,6 +71,7 @@
 #   RUBAC_PROFILE - set the backup profile to use
 #   RUBAC_CLIENT  - set the client to use
 #   RUBAC_SSHOPTS - set the ssh opts (defaults to -a)
+#   RUBAC_RSYNC   - set the rsync command path
 #   RSYNC_RSH     - ssh command string, defaults to "ssh" here
 #
 # == Author
@@ -278,8 +279,8 @@ class Config_rubac
 
 	def version
 		@config['globals']['version']['major'] + "." +
-		@config['globals']['version']['minor'] + "." +
-		@config['globals']['version']['revision']
+		@config['globals']['version']['minor'] + " " +
+		"(rev #{@config['globals']['version']['revision']})"
 	end
 
 	def get_config
@@ -462,6 +463,12 @@ class Rubac
 
 	def initialize(arguments, stdin)
 
+		if ENV['RUBAC_RSYNC']
+			@rsync=ENV['RUBAC_RSYNC']
+		else
+			@rsync="rsync"
+		end
+
 		@includes = ""
 		@excludes = ""
 		@useropts = ""
@@ -571,9 +578,33 @@ class Rubac
 		#
 	end
 
+	# ensure that rsync is at least 2.5.6
+	def rsync_check_version
+		# rsync version must be at least 2.5.6 for --link-dest option
+		rsync_version = `#{@rsync} --version`
+		if $?.exitstatus != 0
+			puts "Error: running #{@rsync} --version"
+			exit(1)
+		end
+		rsync_version = rsync_version[/^rsync\s+version\W+\d+\.\d+\.\d+/]
+		if rsync_version == nil
+			puts "Error: could not determine rsync version"
+			exit(1)
+		end
+		rsync_version = rsync_version[/\d+\.\d+\.\d/]
+		rva = rsync_version.split(/\./)
+		rvi = rva[0].to_i * 100 + rva[1].to_i * 10 + rva[2].to_i
+		if rvi < 256
+			puts "rsync version is too old, require at least rsync version 2.5.6"
+			exit(1)
+		end
+	end
+
 	# Parse options, check arguments, then process the command
 	def main
-        
+ 
+		rsync_check_version
+
 		if arguments_valid? && parsed_options?
 
 			puts "Start at #{DateTime.now}\n\n" if @options.verbose
@@ -955,14 +986,15 @@ class Rubac
 
 	def version_command
 		ver = @config.version
-		puts "#{File.basename(__FILE__)} version " + ver
+		puts "#{File.basename(__FILE__)} " + ver
 	end
     
 	def process_command
 
 		#puts "##### #{@options.cmd} #####"
 		if @options.cmd
-			eval @options.cmd
+			version_command
+			eval @options.cmd if @options.cmd != "version_command"
 		else
 			puts "huh?"
 		end
