@@ -890,13 +890,18 @@ class Rubac
 		end
 
 		pdest = File.join(@options.dest, @options.client, @options.profile)
-		if not @options.snapshot
+		bdest = File.join(pdest, bdir)
+		ldest = File.join(pdest, ldir)
+
+		if @options.snapshot
+			if not File.exist?(ldest)
+				puts "Error: run one backup to #{ldest} before doing a backup snapshot"
+				exit (1)
+			end
+		else
 			# move out incrementals
 			run_command_prep_linkdest(pdest)
 		end
-
-		bdest = File.join(pdest, bdir)
-		ldest = File.join(pdest, ldir)
 
 		# if the link destination doesn't exist, set it to nil
 		ldest = nil if not File.exist?(ldest)
@@ -971,7 +976,7 @@ class Rubac
 	end
 
 	def history_command
-		puts "history command"
+		puts "TODO history command"
 		#
 		# <history>
 		#   <backups>
@@ -990,8 +995,6 @@ class Rubac
 	end
     
 	def process_command
-
-		#puts "##### #{@options.cmd} #####"
 		if @options.cmd
 			version_command
 			eval @options.cmd if @options.cmd != "version_command"
