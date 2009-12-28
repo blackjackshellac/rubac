@@ -17,10 +17,11 @@
 #   -c, --client=HOST     Client to backup (default is localhost)
 #   -i, --include=PATH    Include path, comma separate multiple paths
 #   -x, --exclude=PATH    Exclude path, comma separate multiple paths
+#   -o, --opts=OPTS       Extra rsync options
+#   -E, --delete=PATH     Delete any specified includes, excludes or opts
 #   -d, --dest=DEST       Local destination path (eg., /mnt/backup)
 #   -m, --mail=EMAIL      Notification email, comma separated list
 #   -S, --smtp=SERVER     IP Address of smtp server (default is localhost)
-#   -o, --opts=OPTS       Extra rsync options
 #
 #   -L, --logdir=PATH     Directory for logging (root default is /var/log/rubac, otherwise ENV['TMP'])
 #   -l, --log[=NAME]      Name of log file, (default is %profile%.%run_date%.log)
@@ -457,8 +458,6 @@ end
 class Rubac
 	#include Szmsg
 
-	VERSION = '0.0.1'
-
 	attr_reader :options
 
 	def initialize(arguments, stdin)
@@ -486,7 +485,7 @@ class Rubac
 		@options = OpenStruct.new
 		@options.global = false
 		@options.dbname = nil
-		@options.ninc = 5
+		@options.ninc = 5	# means 5 incrementals, 1-5 with main backup 0
 		
 		if ENV['RUBAC_PROFILE'] and ENV['RUBAC_PROFILE'].length > 0
 			@options.profile = ENV['RUBAC_PROFILE']
@@ -573,7 +572,7 @@ class Rubac
 	end
 
 	# Parse options, check arguments, then process the command
-	def run 
+	def main
         
 		if arguments_valid? && parsed_options?
 
@@ -640,7 +639,10 @@ class Rubac
 		end
 
 		opts.on('-iPATH', '--include PATH', "Add include path") do |inc|
+			# strip whitespace
 			inc.strip!
+			# remove trailing pathslash, if any
+			inc = File.join(File.dirname(inc), File.basename(inc))
 			if @options.include
 				@options.include = @options.include + ",#{inc}"
 			else
@@ -670,8 +672,9 @@ class Rubac
 			ninc = ninc.to_i
 			if ninc < 0
 				puts "Error: number of incrementals must be greater than or equal to 0"
+				puts "       ignoring setting of #{ninc}"
 			#else if ninc >= 1000
-				puts "Error: maximum number of incremental backups exceeded"
+			#	puts "Error: maximum number of incremental backups exceeded"
 			else
 				@options.ninc = ninc
 			end
@@ -791,31 +794,8 @@ class Rubac
 		RDoc::usage('usage') # gets usage from comments above
 	end
  
-	def run_command_snapshot
-	end
-
-	def run_command_prep_snapshot(pdest, snapshot)
-		sdest = File.join(pdest, snapshot)
-		bdest = File.join(pdest, "rubac.0")
-
-		if File.exist?(sdest)
-			puts "Error: snapshot destination exists: #{sdest}"
-			exit(1)
-		end	
-
-		if not File.exist?(bdest)
-			puts "Error: at least one backup is required to take a snapshot"
-			exit(1)
-		end
-
-		mv_flags = { :verbose => true }
-		if @options.dry_run 
-			mv_flags.merge!( :noop => true )
-		end
-		FileUtils.mv( bdest, sdest, mv_flags )
-	end
-
-	def run_command_prep_linkdest(pdest)
+	def run_command_prep_linkdest(pdest, bname="rubac")
+		# setup flags for delete and move
 		rm_flags = { :force => true, :verbose => true }
 		mv_flags = { :verbose => true }
 		if @options.dry_run 
@@ -827,18 +807,21 @@ class Rubac
 		link_dest = false
 		i = []
 		i = (1..@options.ninc).to_a.reverse
-		i.each do |y|
-			x = y - 1
-			xdest = File.join(pdest, "rubac.#{x}")
-			ydest = File.join(pdest, "rubac.#{y}")
+		i.each do |m|
+			n = m - 1
+			# Example,
+			#   n==4, ndest is rubac.4
+			#   m==5, mdest is rubac.5
+			ndest = File.join(pdest, "#{bname}.#{n}")
+			mdest = File.join(pdest, "#{bname}.#{m}")
 			if first_time
-				if File.exist?(ydest)
-					FileUtils.rm_r(ydest, rm_flags)
+				if File.exist?(mdest)
+					FileUtils.rm_r(mdest, rm_flags)
 				end
 				first_time = false
 			end
-			if File.exist?(xdest)
-				FileUtils.mv(xdest, ydest, mv_flags)
+			if File.exist?(ndest)
+				FileUtils.mv(ndest, mdest, mv_flags)
 				link_dest = true
 			end
 		end
@@ -848,7 +831,7 @@ class Rubac
 
 	def run_command_rsync(inc, bdest, ldest)
 		cmd =  %Q(rsync #{@sshopts} #{@useropts})
-		cmd << %Q( --link-dest=#{ldest})
+		cmd << %Q( --link-dest=#{ldest}) if ldest
 		cmd << %Q( --exclude="#{@excludes}") if @excludes.length > 0
 		cmd << %Q( #{inc} #{bdest})
 		puts %Q(#{cmd})
@@ -868,36 +851,41 @@ class Rubac
 		end
 	end
 
-	def run_command
+	# backup to bdir with hardlink to ldir, if it exists
+	def run_command(bdir="rubac.0", ldir="rubac.1")
 		if @options.dest.length == 0
 			puts "Error: backup destination not set"
 			exit(1)
 		end
 
 		pdest = File.join(@options.dest, @options.client, @options.profile)
-		if @options.snapshot
-			run_command_prep_snapshot(pdest, @options.snapshot)
-		else
+		if not @options.snapshot
 			# move out incrementals
 			run_command_prep_linkdest(pdest)
 		end
 
-		bdest = File.join(pdest, "rubac.0")
-		ldest = File.join(pdest, "rubac.1")
+		bdest = File.join(pdest, bdir)
+		ldest = File.join(pdest, ldir)
 
+		# if the link destination doesn't exist, set it to nil
+		ldest = nil if not File.exist?(ldest)
+
+		# assert that bdest doesn't exist here?
 		FileUtils.mkdir_p(bdest)
 
 		inc = @includes.split(",")
 		inc.each do |i|
-
 			run_command_rsync(i, bdest, ldest)
-
 		end
 	end
 
+	#
+	# Do a backup snapshot (not a real filesystem snapshot) by
+	# backing up to the snapshot and linking to rubac.0
+	#
 	def snapshot_command
 		puts "##### Snapshot=#{@options.snapshot} #####"
-		run_command
+		run_command(@options.snapshot, "rubac.0")
 	end
 
 	def list_command_client_key(client, key, delim=",")
@@ -953,6 +941,16 @@ class Rubac
 
 	def history_command
 		puts "history command"
+		#
+		# <history>
+		#   <backups>
+		#     <backup>
+		#       <date>2009.12.28.11:39:51</date>
+		#       <log>backup-log</log>
+		#     </backup>
+		#   </backups>
+		# </history>
+		#
 	end
 
 	def version_command
@@ -971,17 +969,17 @@ class Rubac
 
 	end
 
-	def process_standard_input
-		input = @stdin.read      
+	#def process_standard_input
+	#	input = @stdin.read      
 		# TO DO - process input
 
 		# [Optional]
 		# @stdin.each do |line| 
 		#  # TO DO - process each line
 		# end
-	end
+	#end
 end
 
 rubac = Rubac.new(ARGV, STDIN)
-rubac.run
+rubac.main
 
