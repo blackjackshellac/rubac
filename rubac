@@ -802,8 +802,6 @@ class Rubac
 			end
 		end
 
-		@config.get_global_key_value('testkey', "howdy")
-
 		@xml = @config.save_xml
 
 		@includes = @config.get_client_includes(@options.client)
@@ -819,11 +817,12 @@ class Rubac
     
 	def help_command 
 		version_command
+		# RDoc::usage doesn't work in 1.9.x
 		RDoc::usage() #exits app
 	end
     
 	def usage_command
-		RDoc::usage('usage') # gets usage from comments above
+		RDoc::usage('Usage', 'Options') # gets usage from comments above
 	end
  
 	def run_command_prep_linkdest(pdest, bname="rubac")
