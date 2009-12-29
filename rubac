@@ -889,7 +889,20 @@ class Rubac
 			exit(1)
 		end
 
-		pdest = File.join(@options.dest, @options.client, @options.profile)
+		pdest = File.join(@options.dest, @options.profile, @options.client)
+
+		# if flock(LOCK_EX|LOCK_NB) == false puts "cannot get exclusive lock"
+		# g=File.new("/tmp/junkol", File::CREAT|File::RDONLY, 0600)
+		# g.flock(File::LOCK_EX|File::LOCK_NB)
+		#
+		rlock = File.join(pdest, "rubac.runlock")
+		runlock = File.new(rlock, File::CREAT|File::RDONLY, 0644)
+		if runlock.flock(File::LOCK_EX|File::LOCK_NB) == false
+			puts "Error: cannot lock file #{rlock}"
+			runlock.close
+			return
+		end
+
 		bdest = File.join(pdest, bdir)
 		ldest = File.join(pdest, ldir)
 
