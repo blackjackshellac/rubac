@@ -479,11 +479,14 @@ class Rubac
 		else
 			@sshopts = "-a"
 		end
-		@sshopts << " --relative --delete --delete-excluded"
+		@sshopts << " --relative --delete --delete-excluded --ignore-errors"
 
-		@rsync_rsh = "ssh"
 		# use the value set in the environment, if set
-		@rsync_rsh = "" if ENV['RSYNC_SSH']
+		if ENV['RSYNC_RSH']
+			@rsync_rsh = nil
+		else
+			@rsync_rsh = "-e ssh"
+		end
 
 		@arguments = arguments
 		@stdin = stdin
@@ -922,10 +925,15 @@ class Rubac
 		# assert that bdest doesn't exist here?
 		FileUtils.mkdir_p(bdest)
 
+		# log history files by include
+		# include => "file, file, file, ..."
 		inc = @includes.split(",")
 		inc.each do |i|
 			run_command_rsync(i, bdest, ldest)
 		end
+
+		runlock.flock(File::LOCK_UN)
+		File.delete(rlock)
 	end
 
 	#
