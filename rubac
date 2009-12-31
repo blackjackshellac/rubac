@@ -234,7 +234,8 @@ class Config_rubac
 					'includes' => '',
 					'excludes' => '',
 					'opts' => '',
-					'ninc' => '5'
+					'ninc' => '5',
+					'incrementals' => [ '', '', '', '', '', '' ]
 				}
 			}
 		}
@@ -273,7 +274,8 @@ class Config_rubac
 				'includes' => includes,
 				'excludes' => excludes,
 				'opts' => opts,
-				'ninc' => "5"
+				'ninc' => "5",
+				'incrementals' => [ '', '', '', '', '', '' ]
 			}
 		}
 		@config['clients'].merge!(client)
@@ -382,6 +384,20 @@ class Config_rubac
 	def set_client_ninc(host, ninc)
 		get_client_config(host)
 		@config['clients']["#{host}"]['ninc'] = ninc
+	end
+
+	# set the value of the incremental string (eg. rubac.2009-12-31_10:10:07.3)
+	def set_client_incremental(host, n, name)
+		get_client_config(host)
+		@config['clients']["#{host}"]['incrementals'][n] = name
+	end
+
+	def get_client_incrementals(host, n)
+		get_client_config(host)
+		if not @config['clients']["#{host}"]['incrementals']
+			@config['clients']["#{host}"]['incrementals'] = [] 
+		end
+		@config['clients']["#{host}"]['incrementals'][n]
 	end
 
 	# append (or set) the specified item for the specified client
@@ -829,7 +845,8 @@ class Rubac
 		RDoc::usage('Usage', 'Options') # gets usage from comments above
 	end
  
-	def run_command_prep_linkdest(pdest, bname="rubac")
+	def run_command_prep_linkdest(host, pdest)
+
 		# setup flags for delete and move
 		rm_flags = { :force => true, :verbose => true }
 		mv_flags = { :verbose => true }
@@ -847,8 +864,14 @@ class Rubac
 			# Example,
 			#   n==4, ndest is rubac.4
 			#   m==5, mdest is rubac.5
-			ndest = File.join(pdest, "#{bname}.#{n}")
-			mdest = File.join(pdest, "#{bname}.#{m}")
+
+			# ndest = File.join(pdest, "#{bname}.#{n}")
+			nname = @config.get_client_incrementals(host, n)
+			mname = @config.get_client_incrementals(host, m)
+
+			ndest = File.join(pdest, nname)
+			mdest = File.join(pdest, mname)
+
 			if first_time
 				if File.exist?(mdest)
 					FileUtils.rm_r(mdest, rm_flags)
@@ -857,6 +880,7 @@ class Rubac
 			end
 			if File.exist?(ndest)
 				FileUtils.mv(ndest, mdest, mv_flags)
+				@config.set_client_incremental(host, m, nname)
 				link_dest = true
 			end
 		end
@@ -864,7 +888,7 @@ class Rubac
 
 	end
 
-	def run_command_rsync(inc, bdest, ldest)
+	def run_command_rsync(host, inc, bdest, ldest)
 		cmd =  %Q(rsync #{@sshopts} #{@useropts})
 		cmd << %Q( --link-dest=#{ldest}) if ldest
 		cmd << %Q( --exclude="#{@excludes}") if @excludes.length > 0
@@ -886,14 +910,31 @@ class Rubac
 		end
 	end
 
+	def get_backup_dirname
+		t = Time.now
+		t.strftime("%Y-%m-%d_%H-%M-%S")
+		"rubac." + t.strftime("%Y-%m-%d_%H-%M-%S")
+	end
+
 	# backup to bdir with hardlink to ldir, if it exists
-	def run_command(bdir="rubac.0", ldir="rubac.1")
+	def run_command
+		host = @options.client
+
 		if @options.dest.length == 0
 			puts "Error: backup destination not set"
 			exit(1)
 		end
 
-		pdest = File.join(@options.dest, @options.profile, @options.client)
+		if @options.snapshot
+			bdir = "rubac.#{@options.snapshot}"
+		else
+			bdir = get_backup_dirname
+		end
+
+		ldir = @config.get_client_incrementals(host, 0)
+		ldir = "__none__" if not ldir or ldir.length == 0
+
+		pdest = File.join(@options.dest, @options.profile, host)
 
 		# if flock(LOCK_EX|LOCK_NB) == false puts "cannot get exclusive lock"
 		# g=File.new("/tmp/junkol", File::CREAT|File::RDONLY, 0600)
@@ -912,12 +953,12 @@ class Rubac
 
 		if @options.snapshot
 			if not File.exist?(ldest)
-				puts "Error: run one backup to #{ldest} before doing a backup snapshot"
+				puts "Error: run one backup before doing a snapshot"
 				exit (1)
 			end
 		else
 			# move out incrementals
-			run_command_prep_linkdest(pdest)
+			run_command_prep_linkdest(host, pdest) if ldir != "__none__"
 		end
 
 		# if the link destination doesn't exist, set it to nil
@@ -930,7 +971,8 @@ class Rubac
 		# include => "file, file, file, ..."
 		inc = @includes.split(",")
 		inc.each do |i|
-			run_command_rsync(i, bdest, ldest)
+			run_command_rsync(host, i, bdest, ldest)
+			@config.set_client_incremental(host, 0, bdest)
 		end
 
 		runlock.flock(File::LOCK_UN)
@@ -943,7 +985,7 @@ class Rubac
 	#
 	def snapshot_command
 		puts "##### Snapshot=#{@options.snapshot} #####"
-		run_command(@options.snapshot, "rubac.0")
+		run_command
 	end
 
 	def list_command_client_key(client, key, delim=",")
