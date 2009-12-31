@@ -251,6 +251,7 @@ class Config_rubac
 			@config = @def_config.to_hash
 		end
 		puts "##### load_xml #{@xml_file}" if @debug
+		puts "YAML.dump=" + YAML.dump(@config) + "\n"
 	end
 
 	# save the xml config
