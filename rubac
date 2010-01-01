@@ -28,10 +28,10 @@
 #   -y, --syslog          Use syslog for logging [??]
 #
 #   -t, --list            List the includes, excludes, etc., for the named profile
-#   -F, --full            Perform full backup (overwrites rubac.0 ... probably shouldn't be allowed)
+#   -F, --full            Perform full backup, no incremental backups
 #   -I, --incremental[=N] Number of incremental backups (default is 5)
 #   -r, --run             Run specified profile
-#   -s, --snapshot=NAME   Created a snapshot based on rubac.0
+#   -s, --snapshot=NAME   Created a snapshot based on most recent backup
 #   -n, --dry-run         Perform a trial run of the backup
 #
 #   -H, --history         Backup history
@@ -586,6 +586,7 @@ class Rubac
 		@options.opts = nil
 		@options.snapshot = nil
 		@options.run = false
+		@options.full = false
 		@options.cmd = nil
 		@options.dry_run = false
 		@options.email = nil
@@ -729,13 +730,16 @@ class Rubac
 			@options.email = email
 		end
 
+		opts.on('-F', '--full', "Perform a full backup ignoring incrementals") {
+			@options.full = true
+			set_command("run")
+		}
+
 		opts.on('-IN', '--incremental N', "Set the number of incremental backups") do |ninc|
 			ninc = ninc.to_i
 			if ninc < 0
 				puts "Error: number of incrementals must be greater than or equal to 0"
-				puts "       ignoring setting of #{ninc}"
-			#else if ninc >= 1000
-			#	puts "Error: maximum number of incremental backups exceeded"
+				puts "       ignoring #{ninc}"
 			else
 				@options.ninc = ninc
 			end
@@ -837,7 +841,7 @@ class Rubac
 		@excludes = @config.get_client_excludes(@options.client)
 		@useropts = @config.get_client_opts(@options.client)
 		@sshopts  << " --dry-run" if @options.dry_run
-		@sshopts  << " --verbose" if @options.verbose
+		@sshopts  << " --verbose" #if @options.verbose
 
 		if not File.exist?(@options.dest)
 			puts "Warning: backup destination not set"
@@ -947,12 +951,17 @@ class Rubac
 
 		if @options.snapshot
 			bdir = "rubac.#{@options.snapshot}"
+			ldir = @config.get_client_incrementals(host, 0)
+		elsif @options.full
+			bdir = @config.get_client_incrementals(host, 0)
+			bdir = get_backup_dirname if bdir.length == 0
+			ldir = "__none__"
 		else
 			bdir = get_backup_dirname
+			ldir = @config.get_client_incrementals(host, 0)
 		end
 
-		ldir = @config.get_client_incrementals(host, 0)
-		ldir = "__none__" if not ldir or ldir.length == 0
+		ldir = "__none__" if ldir.length == 0
 
 		pdest = File.join(@options.dest, @options.profile, host)
 		FileUtils.mkdir_p(pdest)
@@ -977,13 +986,15 @@ class Rubac
 				puts "Error: run one backup before doing a snapshot"
 				exit (1)
 			end
+		elsif @options.full
+			puts "Running full backup on #{bdest}"
+			ldest = nil
 		else
 			# move out incrementals
 			run_command_prep_linkdest(host, pdest) if ldir != "__none__"
+			# if the link destination doesn't exist, set it to nil
+			ldest = nil if not File.exist?(ldest)
 		end
-
-		# if the link destination doesn't exist, set it to nil
-		ldest = nil if not File.exist?(ldest)
 
 		# assert that bdest doesn't exist here?
 		FileUtils.mkdir_p(bdest)
@@ -991,9 +1002,10 @@ class Rubac
 		# log history files by include
 		# include => "file, file, file, ..."
 		inc = @includes.split(",")
-		inc.each do |i|
-			run_command_rsync(host, i, bdest, ldest)
-			puts "set 0 to #{bdest}"
+		inc.each do |include|
+			# strip off any trailing path slashes
+			include = File.join(File.dirname(include), File.basename(include))
+			run_command_rsync(host, include, bdest, ldest)
 			@config.set_client_incremental(host, 0, bdir)
 		end
 
