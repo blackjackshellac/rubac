@@ -857,12 +857,10 @@ class Rubac
 	def run_command_prep_linkdest(host, pdest)
 		ninc = @config.get_client_ninc(host)
 
-		# setup flags for delete and move
+		# setup flags for delete
 		rm_flags = { :force => true, :verbose => true }
-		mv_flags = { :verbose => true }
 		if @options.dry_run 
 			rm_flags.merge!( :noop => true )
-			mv_flags.merge!( :noop => true )
 		end
 
 		link_dest = false
@@ -888,20 +886,20 @@ class Rubac
 			p mdest
 
 			# Someone has deleted an incremental backup
-			if not File.exist?(mdest)
-				@config.set_client_incremental(host, m, nname)
+			if not File.exist?(ndest)
+				#@config.set_client_incremental(host, m, nname)
+				puts "Error: incremental backup #{nname} not found"
+				@config.set_client_incremental(host, m, "")
 				@config.set_client_incremental(host, n, "")
 				next
 			end
 
-			if m == ninc
+			if m == ninc and mname.length > 0
 				if File.exist?(mdest)
-					puts "rm #{mdest}"
 					FileUtils.rm_r(mdest, rm_flags)
 				end
 			end
 			if File.exist?(ndest)
-				#FileUtils.mv(ndest, mdest, mv_flags)
 				@config.set_client_incremental(host, m, nname)
 				link_dest = true
 			end
