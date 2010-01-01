@@ -957,9 +957,8 @@ class Rubac
 			exit(status)
 		end
 
-		#File.open( 'animals.yaml', 'w' ) do |out|
-		#    YAML.dump( ['badger', 'elephant', 'tiger'], out )
-		#end
+		# remove duplicates
+		log.uniq!
 
 		puts "Backup log length=#{log.nitems} to #{logf}"
 		File.open( logf, "w" ) do |out|
