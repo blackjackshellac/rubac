@@ -924,6 +924,14 @@ class Rubac
 	end
 
 	def run_command_rsync(host, inc, bdest, ldest)
+
+		logf = File.join(bdest, "rubac.log.yaml")
+		if File.exist?(logf)
+			log = File.open(logf) { |yf| YAML::load(yf) }
+		else
+			log = Array.new
+		end
+
 		cmd =  %Q(rsync #{@sshopts} #{@useropts})
 		cmd << %Q( --link-dest=#{ldest}) if ldest
 		cmd << %Q( --exclude="#{@excludes}") if @excludes.length > 0
@@ -931,7 +939,12 @@ class Rubac
 		puts %Q(#{cmd})
 		p = IO.popen(%Q(#{cmd}))
 		while (line = p.gets)
-			print "  ::" + line
+			line.chop!
+			if line[/^#{inc}.*/]
+				log << line
+			else
+				puts line
+			end
 		end
 		## TODO get status of command??
 		status=$?
@@ -942,6 +955,19 @@ class Rubac
 		if status and status != 0
 			puts "Error: running command %Q(#{cmd})"
 			exit(status)
+		end
+
+		#File.open( 'animals.yaml', 'w' ) do |out|
+		#    YAML.dump( ['badger', 'elephant', 'tiger'], out )
+		#end
+
+		puts "Backup log length=#{log.nitems} to #{logf}"
+		File.open( logf, "w" ) do |out|
+			YAML.dump( log, out )
+		end
+
+		log.each do |entry|
+			puts entry
 		end
 	end
 
