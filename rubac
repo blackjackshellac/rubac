@@ -235,7 +235,7 @@ class Config_rubac
 					'excludes' => '',
 					'opts' => '',
 					'ninc' => '5',
-					'incrementals' => [ '', '', '', '', '', '' ]
+					'incrementals' => { '0' => "" }
 				}
 			}
 		}
@@ -267,18 +267,16 @@ class Config_rubac
 		xml
 	end
 
-	def add_client(host, includes, excludes, opts)
-		client= {
-			"#{host}" => {
-				'host' => host,
-				'includes' => includes,
-				'excludes' => excludes,
-				'opts' => opts,
-				'ninc' => "5",
-				'incrementals' => [ '', '', '', '', '', '' ]
-			}
-		}
+	def add_client(host)
+		return if @config['clients'].has_key?(host)
+		client = Hash.new
+		client["#{host}"] = @def_config['clients']['localhost']
 		@config['clients'].merge!(client)
+	end
+
+	def add_client_key(host, key)
+		add_client(host)
+		@config['clients']["#{host}"]["#{key}"] = @def_config['clients']['localhost']["#{key}"]
 	end
 
 	def version
@@ -356,9 +354,7 @@ class Config_rubac
 	end
 
 	def get_client_config(host)
-		if not @config['clients'].has_key?(host)
-			add_client(host, "", "", "")
-		end
+		add_client(host) if not @config['clients'].has_key?(host)
 		@config['clients']["#{host}"]
 	end
 
@@ -389,15 +385,21 @@ class Config_rubac
 	# set the value of the incremental string (eg. rubac.2009-12-31_10:10:07.3)
 	def set_client_incremental(host, n, name)
 		get_client_config(host)
-		@config['clients']["#{host}"]['incrementals'][n] = name
+		@config['clients']["#{host}"]['incrementals']["#{n}"] = name
+		puts "set incr[#{n}]=#{name}"
 	end
 
 	def get_client_incrementals(host, n)
 		get_client_config(host)
-		if not @config['clients']["#{host}"]['incrementals']
-			@config['clients']["#{host}"]['incrementals'] = [] 
+		if not @config['clients']["#{host}"].has_key?('incrementals')
+			puts "DEBUG: incrementals not found for host=#{host}"
+			@config['clients']["#{host}"]['incrementals'] = { "#{n}" => "" }
 		end
-		@config['clients']["#{host}"]['incrementals'][n]
+		if not @config['clients']["#{host}"]['incrementals'].has_key?("#{n}")
+			@config['clients']["#{host}"]['incrementals']["#{n}"] = ""
+		end
+		puts "GET: incr[#{n}]=" + @config['clients']["#{host}"]['incrementals']["#{n}"].to_s
+		@config['clients']["#{host}"]['incrementals']["#{n}"].to_s
 	end
 
 	# append (or set) the specified item for the specified client
@@ -440,6 +442,10 @@ class Config_rubac
 	def get_client_key(host, key, delim=",")
 		get_client_config(host)
 
+		if delim == nil
+			return @config['clients']["#{host}"]["#{key}"]
+		end
+
 		inc = []
 		if @config['globals']["#{key}"].length > 0
 			inc = @config['globals']["#{key}"].split(",")
@@ -457,7 +463,6 @@ class Config_rubac
 		end
 
 		inc.join(delim)
-
 	end
 
 	def get_client_includes(host)
@@ -471,6 +476,10 @@ class Config_rubac
 
 	def get_client_opts(host)
 		get_client_key(host, 'opts', " ")
+	end
+
+	def get_client_ninc(host)
+		get_client_key(host, 'ninc', nil)
 	end
 end
 
@@ -828,7 +837,7 @@ class Rubac
 		@excludes = @config.get_client_excludes(@options.client)
 		@useropts = @config.get_client_opts(@options.client)
 		@sshopts  << " --dry-run" if @options.dry_run
-		@sshopts  << " --verbose" # if @options.verbose
+		@sshopts  << " --verbose" if @options.verbose
 
 		if not File.exist?(@options.dest)
 			puts "Warning: backup destination not set"
@@ -846,6 +855,7 @@ class Rubac
 	end
  
 	def run_command_prep_linkdest(host, pdest)
+		ninc = @config.get_client_ninc(host)
 
 		# setup flags for delete and move
 		rm_flags = { :force => true, :verbose => true }
@@ -855,31 +865,43 @@ class Rubac
 			mv_flags.merge!( :noop => true )
 		end
 
-		first_time = true
 		link_dest = false
 		i = []
-		i = (1..@options.ninc).to_a.reverse
+		i = (1..ninc).to_a.reverse
 		i.each do |m|
 			n = m - 1
 			# Example,
 			#   n==4, ndest is rubac.4
 			#   m==5, mdest is rubac.5
 
-			# ndest = File.join(pdest, "#{bname}.#{n}")
 			nname = @config.get_client_incrementals(host, n)
 			mname = @config.get_client_incrementals(host, m)
+
+			puts "n=#{n} nname=#{nname} m=#{m} mname=#{mname}"
+
+			next if nname.length == 0
 
 			ndest = File.join(pdest, nname)
 			mdest = File.join(pdest, mname)
 
-			if first_time
+			p ndest
+			p mdest
+
+			# Someone has deleted an incremental backup
+			if not File.exist?(mdest)
+				@config.set_client_incremental(host, m, nname)
+				@config.set_client_incremental(host, n, "")
+				next
+			end
+
+			if m == ninc
 				if File.exist?(mdest)
+					puts "rm #{mdest}"
 					FileUtils.rm_r(mdest, rm_flags)
 				end
-				first_time = false
 			end
 			if File.exist?(ndest)
-				FileUtils.mv(ndest, mdest, mv_flags)
+				#FileUtils.mv(ndest, mdest, mv_flags)
 				@config.set_client_incremental(host, m, nname)
 				link_dest = true
 			end
@@ -935,6 +957,7 @@ class Rubac
 		ldir = "__none__" if not ldir or ldir.length == 0
 
 		pdest = File.join(@options.dest, @options.profile, host)
+		FileUtils.mkdir_p(pdest)
 
 		# if flock(LOCK_EX|LOCK_NB) == false puts "cannot get exclusive lock"
 		# g=File.new("/tmp/junkol", File::CREAT|File::RDONLY, 0600)
@@ -972,11 +995,14 @@ class Rubac
 		inc = @includes.split(",")
 		inc.each do |i|
 			run_command_rsync(host, i, bdest, ldest)
-			@config.set_client_incremental(host, 0, bdest)
+			puts "set 0 to #{bdest}"
+			@config.set_client_incremental(host, 0, bdir)
 		end
 
+		@config.save_xml
+
 		runlock.flock(File::LOCK_UN)
-		File.delete(rlock)
+		#File.delete(rlock)
 	end
 
 	#
