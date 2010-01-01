@@ -243,9 +243,9 @@ class Config_rubac
 	end
 
 	def version
-		@def_config['globals']['version']['major'] + "." +
-		@def_config['globals']['version']['minor'] + " " +
-		"(rev #{@def_config['globals']['version']['revision']})"
+		@config['globals']['version']['major'] + "." +
+		@config['globals']['version']['minor'] + " " +
+		"(rev #{@config['globals']['version']['revision']})"
 	end
 
 	# set config file version to match script version, do any version
@@ -1023,7 +1023,7 @@ class Rubac
 		@config.save_xml
 
 		runlock.flock(File::LOCK_UN)
-		#File.delete(rlock)
+		File.delete(rlock)
 	end
 
 	#
