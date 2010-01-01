@@ -215,7 +215,7 @@ class Config_rubac
 			'globals' => {
 				'version' => {
 					'major' => '0',
-					'minor' => '7',
+					'minor' => '8',
 					'revision' => "$Rev$"[6..-3]
 				},
 				'opts' => '',
@@ -242,6 +242,21 @@ class Config_rubac
 		@config = {}
 	end
 
+	def version
+		@def_config['globals']['version']['major'] + "." +
+		@def_config['globals']['version']['minor'] + " " +
+		"(rev #{@def_config['globals']['version']['revision']})"
+	end
+
+	# set config file version to match script version, do any version
+	# checking here as well for compatibility reasons, if any
+	def align_version
+		ver = Hash.new
+		ver = @def_config['globals']['version']
+		# compare ver and @config['globals']['version'] here
+		@config['globals']['version'] = ver
+	end
+
 	# load the xml config
 	def load_xml(file, path="./")
 		@xml_file = File.join(path, file)
@@ -253,6 +268,8 @@ class Config_rubac
 		end
 		puts "##### load_xml #{@xml_file}" if @debug
 		puts "YAML.dump=" + YAML.dump(@config) + "\n"
+
+		align_version
 	end
 
 	# save the xml config
@@ -277,12 +294,6 @@ class Config_rubac
 	def add_client_key(host, key)
 		add_client(host)
 		@config['clients']["#{host}"]["#{key}"] = @def_config['clients']['localhost']["#{key}"]
-	end
-
-	def version
-		@config['globals']['version']['major'] + "." +
-		@config['globals']['version']['minor'] + " " +
-		"(rev #{@config['globals']['version']['revision']})"
 	end
 
 	def get_config
@@ -851,11 +862,11 @@ class Rubac
 	def help_command 
 		version_command
 		# RDoc::usage doesn't work in 1.9.x
-		RDoc::usage() #exits app
+		RDoc::usage('Synopsis', 'Usage', 'Options') #exits app
 	end
     
 	def usage_command
-		RDoc::usage('Usage', 'Options') # gets usage from comments above
+		RDoc::usage('Synopsis', 'Usage', 'Options') # gets usage from comments above
 	end
  
 	def run_command_prep_linkdest(host, pdest)
