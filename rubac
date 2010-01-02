@@ -10,35 +10,41 @@
 #   For help use: rubac -h
 #
 # == Options
-#   -g, --global          Apply includes, excludes, options etc., to global profile
-#   -p, --profile=NAME    Name of backup profile (default is rubac)
-#   -D, --datadir=PATH   Configuration directory (if root /etc/rubac otherwise ~/.rubac)
+#   -g, --global            Apply includes, excludes, options etc., to global profile
+#   -p, --profile=NAME      Name of backup profile (default is rubac)
+#   -D, --datadir=PATH      Configuration directory (if root /etc/rubac otherwise ~/.rubac)
 #
-#   -c, --client=HOST     Client to backup (default is localhost)
-#   -i, --include=PATH    Include path, comma separate multiple paths
-#   -x, --exclude=PATH    Exclude path, comma separate multiple paths
-#   -o, --opts=OPTS       Extra rsync options
-#   -E, --delete=PATH     Delete any specified includes, excludes or opts
-#   -d, --dest=DEST       Local destination path (eg., /mnt/backup)
-#   -m, --mail=EMAIL      Notification email, comma separated list
-#   -S, --smtp=SERVER     IP Address of smtp server (default is localhost)
+#   -c, --client=HOST       Client to backup (default is localhost)
+#   -i, --include=PATH      Include path, comma separate multiple paths
+#   -x, --exclude=PATH      Exclude path, comma separate multiple paths
+#   -o, --opts=OPTS         Extra rsync options
+#   -E, --delete=PATH       Delete any specified includes, excludes or opts
+#   -d, --dest=DEST         Local destination path (eg., /mnt/backup)
+#   -m, --mail=EMAIL        TODO Notification email, comma separated list
+#   -M, --smtp=SERVER       TODO IP Address of smtp server (default is localhost)
 #
-#   -L, --logdir=PATH     Directory for logging (root default is /var/log/rubac, otherwise ENV['TMP'])
-#   -l, --log[=NAME]      Name of log file, (default is %profile%.%run_date%.log)
-#   -y, --syslog          Use syslog for logging [??]
+#   -L, --logdir=PATH       TODO Directory for logging (root default is /var/log/rubac, otherwise TMP)
+#   -l, --log[=NAME]        TODO Name of log file, (default is %profile%.%run_date%.log)
+#   -y, --syslog            TODO Use syslog for logging [??]
 #
-#   -t, --list            List the includes, excludes, etc., for the named profile
-#   -F, --full            Perform full backup, no incremental backups
-#   -I, --incremental[=N] Number of incremental backups (default is 5)
-#   -r, --run             Run specified profile
-#   -s, --snapshot=NAME   Created a snapshot based on most recent backup
-#   -n, --dry-run         Perform a trial run of the backup
+#   -t, --list              List the includes, excludes, etc., for the named profile
+#   -f, --full              Perform full backup, no incremental backups
+#   -I, --incremental[=N]   Number of incremental backups (default is 5)
+#   -r, --run               Run specified profile
+#   -s, --snapshot=NAME     Created a snapshot based on most recent backup
+#   -n, --dry-run           Perform a trial run of the backup
+#   -z, --compress          TODO Compress the file data during backup
 #
-#   -H, --history         Backup history
-#   -h, --help            Displays help message
-#   -v, --version         Display the version
-#   -q, --quiet           Output as little as possible, overrides verbose
-#   -V, --verbose         Verbose output
+#   -H, --history           TODO Backup history
+#   -T, --restore-to=PATH   TODO Restore to the given base path (default is TMP)
+#   -R, --restore=FILE      TODO Restore file as file[:index] if the incremental index is not given it defaults to most recent
+#   -F, --restore-from=FILE TODO Restore file list from the given file (comma or new line delimited)
+#   -S, --search=GLOB       TODO Search for the given glob in the backup history
+#
+#   -h, --help              Displays help message
+#   -v, --version           Display the version
+#   -q, --quiet             Output as little as possible, overrides verbose
+#   -V, --verbose           Verbose output
 #
 # == Examples
 #
@@ -409,7 +415,6 @@ class Config_rubac
 		if not @config['clients']["#{host}"]['incrementals'].has_key?("#{n}")
 			@config['clients']["#{host}"]['incrementals']["#{n}"] = ""
 		end
-		puts "GET: incr[#{n}]=" + @config['clients']["#{host}"]['incrementals']["#{n}"].to_s
 		@config['clients']["#{host}"]['incrementals']["#{n}"].to_s
 	end
 
@@ -490,6 +495,7 @@ class Config_rubac
 	end
 
 	def get_client_ninc(host)
+		# TODO if client ninc is not set use global ninc
 		get_client_key(host, 'ninc', nil)
 	end
 end
@@ -741,7 +747,7 @@ class Rubac
 			@options.email = email
 		end
 
-		opts.on('-F', '--full', "Perform a full backup ignoring incrementals") {
+		opts.on('-f', '--full', "Perform a full backup ignoring incrementals") {
 			@options.full = true
 			set_command("run")
 		}
@@ -939,8 +945,9 @@ class Rubac
 			excl = File.join(@options.tmp, File.basename(bdest) + ".excl")
 			exclf = File.open( excl, "w" )
 			@excludes.split(",").each do |x|
-				exclf.puts(x)
+				exclf.puts( x )
 			end
+			exclf.close
 			cmd << %Q( --exclude-from="#{excl}") if @excludes.length > 0
 		end
 		cmd << %Q( #{inc} #{bdest})
@@ -973,9 +980,9 @@ class Rubac
 			YAML.dump( log, out )
 		end
 
-		log.each do |entry|
-			puts entry
-		end
+	#	log.each do |entry|
+	#		puts entry
+	#	end
 	end
 
 	def get_backup_dirname
@@ -1046,10 +1053,10 @@ class Rubac
 		# log history files by include
 		# include => "file, file, file, ..."
 		inc = @includes.split(",")
-		inc.each do |include|
+		inc.each do |i|
 			# strip off any trailing path slashes
-			include = File.join(File.dirname(include), File.basename(include))
-			run_command_rsync(host, include, bdest, ldest)
+			ifp = File.join(File.dirname(i), File.basename(i))
+			run_command_rsync(host, ifp, bdest, ldest)
 			@config.set_client_incremental(host, 0, bdir)
 		end
 
@@ -1122,6 +1129,25 @@ class Rubac
 	def history_command
 		puts "TODO history command"
 		# look in /bdest/profile/client/rubac.date,.../rubac.log.yaml
+		host = @options.client
+		if host == "localhost"
+			clients = @config.get_clients
+			clients.each_key do |cli|
+				ninc = @config.get_client_ninc(cli).to_i
+				ninc.times do |n|
+					name = @config.get_client_incrementals(host, n)
+					break if name.length == 0
+					puts "#{n} #{name}"
+				end		
+			end
+		else
+			ninc = @config.get_client_ninc(host).to_i
+			ninc.times do |n|
+				name = @config.get_client_incrementals(host, n)
+				break if name.length == 0
+				puts "#{n} #{name}"
+			end
+		end
 	end
 
 	def version_command
