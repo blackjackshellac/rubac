@@ -934,7 +934,15 @@ class Rubac
 
 		cmd =  %Q(rsync #{@sshopts} #{@useropts})
 		cmd << %Q( --link-dest=#{ldest}) if ldest
-		cmd << %Q( --exclude="#{@excludes}") if @excludes.length > 0
+		# write the excludes to a file and use --exclude-from 
+		if @excludes.length > 0
+			excl = File.join(@options.tmp, File.basename(bdest) + ".excl")
+			exclf = File.open( excl, "w" )
+			@excludes.split(",").each do |x|
+				exclf.puts(x)
+			end
+			cmd << %Q( --exclude-from="#{excl}") if @excludes.length > 0
+		end
 		cmd << %Q( #{inc} #{bdest})
 		puts %Q(#{cmd})
 		p = IO.popen(%Q(#{cmd}))
@@ -1113,16 +1121,7 @@ class Rubac
 
 	def history_command
 		puts "TODO history command"
-		#
-		# <history>
-		#   <backups>
-		#     <backup>
-		#       <date>2009.12.28.11:39:51</date>
-		#       <log>backup-log</log>
-		#     </backup>
-		#   </backups>
-		# </history>
-		#
+		# look in /bdest/profile/client/rubac.date,.../rubac.log.yaml
 	end
 
 	def version_command
