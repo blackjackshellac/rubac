@@ -28,7 +28,7 @@
 #   -y, --syslog            TODO Use syslog for logging [??]
 #
 #   -t, --list              List the includes, excludes, etc., for the named profile
-#   -f, --full              Perform full backup, no incremental backups
+#   -u, --update            Perform update backup, no incremental backups
 #   -I, --incremental[=N]   Number of incremental backups (default is 5)
 #   -r, --run               Run specified profile
 #   -s, --snapshot=NAME     Created a snapshot based on most recent backup
@@ -603,7 +603,7 @@ class Rubac
 		@options.opts = nil
 		@options.snapshot = nil
 		@options.run = false
-		@options.full = false
+		@options.update = false
 		@options.cmd = nil
 		@options.dry_run = false
 		@options.email = nil
@@ -747,8 +747,8 @@ class Rubac
 			@options.email = email
 		end
 
-		opts.on('-f', '--full', "Perform a full backup ignoring incrementals") {
-			@options.full = true
+		opts.on('-u', '--update', "Perform an update backup ignoring incrementals") {
+			@options.update = true
 			set_command("run")
 		}
 
@@ -1003,7 +1003,7 @@ class Rubac
 		if @options.snapshot
 			bdir = "rubac.#{@options.snapshot}"
 			ldir = @config.get_client_incrementals(host, 0)
-		elsif @options.full
+		elsif @options.update
 			bdir = @config.get_client_incrementals(host, 0)
 			bdir = get_backup_dirname if bdir.length == 0
 			ldir = "__none__"
@@ -1037,7 +1037,7 @@ class Rubac
 				puts "Error: run one backup before doing a snapshot"
 				exit (1)
 			end
-		elsif @options.full
+		elsif @options.update
 			puts "Running full backup on #{bdest}"
 			ldest = nil
 		else
