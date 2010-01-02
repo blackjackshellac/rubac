@@ -496,7 +496,7 @@ class Config_rubac
 
 	def get_client_ninc(host)
 		# TODO if client ninc is not set use global ninc
-		get_client_key(host, 'ninc', nil)
+		get_client_key(host, 'ninc', nil).to_i
 	end
 end
 
@@ -1126,27 +1126,39 @@ class Rubac
 		#send_email(from, to, subject, body, "relais.videotron.ca")
 	end
 
+	def history_command_display(cli, hist)
+		return if hist.nitems == 0
+		hist.each_index do |i|
+			puts "#{i}: #{hist[i]}"
+		end
+	end
+
+	def history_command_get_history(cli)
+		entries = []
+		ninc = @config.get_client_ninc(cli)
+		return entries if ninc == nil or ninc == 0
+		ninc.times do |n|
+			name = @config.get_client_incrementals(cli, n)
+			break if name.length == 0
+			entries << name
+		end
+		entries
+	end
+
 	def history_command
+		hist = []
+		host = @options.client
 		puts "TODO history command"
 		# look in /bdest/profile/client/rubac.date,.../rubac.log.yaml
-		host = @options.client
 		if host == "localhost"
 			clients = @config.get_clients
 			clients.each_key do |cli|
-				ninc = @config.get_client_ninc(cli).to_i
-				ninc.times do |n|
-					name = @config.get_client_incrementals(host, n)
-					break if name.length == 0
-					puts "#{n} #{name}"
-				end		
+				hist = history_command_get_history(cli)
+				history_command_display(cli, hist)
 			end
 		else
-			ninc = @config.get_client_ninc(host).to_i
-			ninc.times do |n|
-				name = @config.get_client_incrementals(host, n)
-				break if name.length == 0
-				puts "#{n} #{name}"
-			end
+			hist = history_command_get_history(host)
+			history_command_display(host, hist)
 		end
 	end
 
