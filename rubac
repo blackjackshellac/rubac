@@ -1050,6 +1050,16 @@ class Rubac
 		# assert that bdest doesn't exist here?
 		FileUtils.mkdir_p(bdest)
 
+		# copy previous backup log to bdest, but only if it doesn't
+		# already exist
+		blogf = File.join(bdest, "rubac.log.yaml")
+		if not File.exist?(blogf) and ldest
+			llogf = File.join(ldest, "rubac.log.yaml")
+			if File.exist?(llogf)
+				FileUtils.copy(llogf, blogf, :verbose => true)
+			end
+		end
+
 		# log history files by include
 		# include => "file, file, file, ..."
 		inc = @includes.split(",")
