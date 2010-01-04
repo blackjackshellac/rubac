@@ -929,12 +929,31 @@ class Rubac
 
 	end
 
+	def run_command_fill(droot, path, log)
+		bdir = Dir.new(path)
+		bdir.each { |d|
+			next if d == "." or d == ".."
+			p = File.join(path, d)
+			q = p.sub(/^#{droot}/, "")
+			if File.lstat(p).directory?
+				q << "/"
+				log << "#{q}"
+				puts ":d:#{q}:d:"
+				run_command_fill(droot, p, log)
+			end
+			log << "#{q}"
+			puts ":f:#{q}:f:"
+		}
+	end
+
 	def run_command_rsync(host, inc, bdest, ldest)
 
 		logf = File.join(bdest, "rubac.log.yaml")
 		if File.exist?(logf)
+			fill = false
 			log = File.open(logf) { |yf| YAML::load(yf) }
 		else
+			fill = true
 			log = Array.new
 		end
 
@@ -955,10 +974,16 @@ class Rubac
 		p = IO.popen(%Q(#{cmd}))
 		while (line = p.gets)
 			line.chop!
+			# if deleting, remove the file from 'log', if it exists
+			# ^deleting home/rico/.thumbnails/normal/6bf9e300a41296740a5fdd89b98e1d93.png
 			if line[/^#{inc}.*/]
 				log << line
+			elsif line[/^\s*deleting\s+/]
+				line.sub!(/^\s*deleting\s+/, "/")
+				puts "xx#{line}xx"
+				log.delete(line)
 			else
-				puts line
+				puts "::#{line}::"
 			end
 		end
 		## TODO get status of command??
@@ -971,6 +996,9 @@ class Rubac
 			puts "Error: running command %Q(#{cmd})"
 			exit(status)
 		end
+
+		bdir = File.join(bdest, inc)
+		run_command_fill(bdest, bdir, log) if fill
 
 		# remove duplicates
 		log.uniq!
@@ -1052,13 +1080,13 @@ class Rubac
 
 		# copy previous backup log to bdest, but only if it doesn't
 		# already exist
-		blogf = File.join(bdest, "rubac.log.yaml")
-		if not File.exist?(blogf) and ldest
-			llogf = File.join(ldest, "rubac.log.yaml")
-			if File.exist?(llogf)
-				FileUtils.copy(llogf, blogf, :verbose => true)
-			end
-		end
+		#blogf = File.join(bdest, "rubac.log.yaml")
+		#if not File.exist?(blogf) and ldest
+		#	llogf = File.join(ldest, "rubac.log.yaml")
+		#	if File.exist?(llogf)
+		#		FileUtils.copy(llogf, blogf, :verbose => true)
+		#	end
+		#end
 
 		# log history files by include
 		# include => "file, file, file, ..."
