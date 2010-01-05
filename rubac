@@ -18,16 +18,16 @@
 #   -i, --include=PATH      Include path, comma separate multiple paths
 #   -x, --exclude=PATH      Exclude path, comma separate multiple paths
 #   -o, --opts=OPTS         Extra rsync options
-#       --delete=PATH       TODO Delete any specified includes, excludes or opts
+#       --delete=PATH       Delete any specified includes, excludes or opts
 #   -d, --dest=DEST         Local destination path (eg., /mnt/backup)
 #   -m, --mail=EMAIL        TODO Notification email, comma separated list
 #   -M, --smtp=SERVER       TODO IP Address of smtp server (default is localhost)
 #
 #   -L, --logdir=PATH       TODO Directory for logging (root default is /var/log/rubac, otherwise TMP)
-#   -l, --log[=NAME]        TODO Name of log file, (default is %profile%.%run_date%.log)
+#       --log[=NAME]        TODO Name of log file, (default is %profile%.%run_date%.log)
 #   -y, --syslog            TODO Use syslog for logging [??]
 #
-#   -t, --list              List the includes, excludes, etc., for the named profile
+#   -l, --list              List the includes, excludes, etc., for the named profile
 #   -u, --update            Perform update backup, no incremental backups
 #   -I, --incremental[=N]   Number of incremental backups (default is 5)
 #   -r, --run               Run specified profile
@@ -113,6 +113,25 @@ require 'xmlsimple'
 
 require 'net/smtp'
 require 'rbconfig'	# ruby config
+
+CONFIG_KEY_VER="version"
+CONFIG_KEY_VER_MAJ="major"
+CONFIG_KEY_VER_MIN="minor"
+CONFIG_KEY_VER_REV="revision"
+
+CONFIG_KEY_GLOBALS="globals"
+CONFIG_KEY_INC="includes"
+CONFIG_KEY_EXC="excludes"
+CONFIG_KEY_OPT="opts"
+CONFIG_KEY_DEST="dest"
+CONFIG_KEY_NINC="ninc"
+CONFIG_KEY_LOGDIR="logdir"
+CONFIG_KEY_LOGNAME="logname"
+CONFIG_KEY_EMAIL="email"
+CONFIG_KEY_SMTP="smtp"
+
+UPDATE_CMD_ADD="add"
+UPDATE_CMD_DEL="delete"
 
 class Email
 	def address_email(addr, name="")
@@ -297,11 +316,6 @@ class Config_rubac
 		@config['clients'].merge!(client)
 	end
 
-	def add_client_key(host, key)
-		add_client(host)
-		@config['clients']["#{host}"]["#{key}"] = @def_config['clients']['localhost']["#{key}"]
-	end
-
 	def get_config
 		@config.to_hash
 	end
@@ -346,7 +360,7 @@ class Config_rubac
 
 	# type is add/delete
 	def global_updates(type, inc, exc, opts)
-		if type == "delete"
+		if type == UPDATE_CMD_DEL
 			del_global_key("includes", inc)
 			del_global_key("excludes", exc)
 			del_global_key("opts", opts, " ")
@@ -359,17 +373,17 @@ class Config_rubac
 
 	# add the specified includes to the global include list
 	def add_global_includes(inc)
-		add_global_key("includes", inc)
+		global_updates(UPDATE_CMD_ADD, "includes", inc, nil, nil)
 	end
 
 	# add the specified excludes to the global exclude list
 	def add_global_excludes(exc)
-		add_global_key("excludes", exc)
+		global_updates(UPDATE_CMD_ADD, "excludes", nil, exc, nil)
 	end
 
 	# add the specified opts to the global opts list
 	def add_global_opts(opts)
-		add_global_key("opts", opts, " ")
+		global_updates(UPDATE_CMD_ADD, "excludes", nil, nil, opts)
 	end
 
 	def get_global_key_value(key, default = "")
@@ -380,21 +394,16 @@ class Config_rubac
 	end
 
 	def get_global_ninc(ninc)
-		if not @config['globals'].has_key?('ninc')
-			@config['globals'] << { 'ninc' => 5 }
-		end
-		@config['globals']['ninc']
+		get_global_key_value("ninc", @def_config['globals']['ninc'])
 	end
 
-	def set_global_ninc(ninc)
-		if not @config['globals'].has_key?('ninc')
-			@config['globals'] << { 'ninc' => 5 }
-		end
-		@config['globals']['ninc'] = ninc
+	def set_global_key_value(key, value)
+		@config['globals']["#{key}"] = value
 	end
 
 	# set the specified path to the global backup destination
 	def set_global_dest(dest)
+		return if dest == nil or dest.length == 0
 		@config['globals']['dest'] = dest
 	end
 
@@ -407,28 +416,9 @@ class Config_rubac
 		@config['clients']["#{host}"]
 	end
 
-	# overwrite includes for specified client
-	def set_client_includes(host, inc)
+	def set_client_key_value(host, key, value)
 		get_client_config(host)
-		@config['clients']["#{host}"]['includes'] = inc
-	end
-
-	# overwrite excludes for specified client
-	def set_client_excludes(host, exc)
-		get_client_config(host)
-		@config['clients']["#{host}"]['excludes'] = exc 
-	end
-
-	# overwrite opts for specified client
-	def set_client_opts(host, opts)
-		get_client_config(host)
-		@config['clients']["#{host}"]['opts'] = opts
-	end
-
-	# overwrite number of incrementals value for specified host
-	def set_client_ninc(host, ninc)
-		get_client_config(host)
-		@config['clients']["#{host}"]['ninc'] = ninc
+		@config['clients']["#{host}"]["#{key}"] = value
 	end
 
 	# set the value of the incremental string (eg. rubac.2009-12-31_10:10:07.3)
@@ -488,7 +478,7 @@ class Config_rubac
 
 	# type is add/delete
 	def client_updates(host, type, inc, exc, opts)
-		if type == "delete"
+		if type == UPDATE_CMD_DEL
 			del_client_key(host, "includes", inc)
 			del_client_key(host, "excludes", exc)
 			del_client_key(host, "opts", opts, " ")
@@ -521,48 +511,50 @@ class Config_rubac
 
 	# get the specified key value from globals and clients
 	# and return a comma delimited list
-	def get_client_key(host, key, delim=",")
+	def get_client_key_list(host, key, delim=",")
 		get_client_config(host)
 
-		if delim == nil
-			return @config['clients']["#{host}"]["#{key}"]
-		end
+		entries = []
+		entries = get_global_key_value(key).to_s.split(delim)
 
-		inc = []
-		if @config['globals']["#{key}"].length > 0
-			inc = @config['globals']["#{key}"].split(delim)
-		end
-
-		if @config['clients']["#{host}"]["#{key}"].length > 0
+		if @config['clients']["#{host}"].has_key?(key) and @config['clients']["#{host}"]["#{key}"].length > 0
 			# eliminate duplicates, if any
-			inc = inc | @config['clients']["#{host}"]["#{key}"].split(delim)
+			entries = entries | @config['clients']["#{host}"]["#{key}"].split(delim)
 		end
 
 		if host != "localhost" and key == "includes"
-			inc.each_index do |i|
-				inc[i] = "#{host}:" + inc[i]
+			entries.each_index do |i|
+				entries[i] = "#{host}:" + entries[i]
 			end
 		end
 
-		inc.join(delim)
+		entries.join(delim)
 	end
 
 	def get_client_includes(host)
-		get_client_key(host, 'includes')
+		get_client_key_list(host, 'includes')
 
 	end
 
 	def get_client_excludes(host)
-		get_client_key(host, 'excludes')
+		get_client_key_list(host, 'excludes')
 	end
 
 	def get_client_opts(host)
-		get_client_key(host, 'opts', " ")
+		get_client_key_list(host, 'opts', " ")
+	end
+
+	def get_client_key_value(host, key)
+		get_client_config(host)
+		if not @config['clients']["#{host}"].has_key?(key)
+			@config['clients']["#{host}"]["#{key}"] = @def_config['clients']['localhost']["#{key}"]
+		end
+		@config['clients']["#{host}"]["#{key}"]
 	end
 
 	def get_client_ninc(host)
 		# TODO if client ninc is not set use global ninc
-		get_client_key(host, 'ninc', nil).to_i
+		get_client_key_value(host, 'ninc').to_i
 	end
 end
 
@@ -605,7 +597,7 @@ class Rubac
 		@options = OpenStruct.new
 		@options.global = false
 		@options.dbname = nil
-		@options.ninc = 5	# means 5 incrementals, 1-5 with main backup 0
+		@options.ninc = nil	# means 5 incrementals, 1-5 with main backup 0
 		
 		if ENV['RUBAC_PROFILE'] and ENV['RUBAC_PROFILE'].length > 0
 			@options.profile = ENV['RUBAC_PROFILE']
@@ -663,7 +655,7 @@ class Rubac
 
 		@options.verbose = false
 		@options.quiet = false
-		@options.update_cmd = "add" 
+		@options.update_cmd = UPDATE_CMD_ADD
 		@options.include = nil
 		@options.exclude = nil
 		@options.dest = nil
@@ -687,6 +679,9 @@ class Rubac
 		else
 			@options.logdir = "#{@options.tmp}/rubac"
 		end
+
+		# use default log
+		@options.log = nil
 
 		#
 		# TODO - add additional defaults end
@@ -755,7 +750,7 @@ class Rubac
 		opts.on('-g', '--global', "Apply options to the global profile") { @options.global = true }
 
 		opts.on('--delete', "Delete any specified includes, excludes, etc") {
-			@options.update_cmd = "delete"
+			@options.update_cmd = UPDATE_CMD_DEL
 		}
 
 		opts.on('-LPATH', '--logdir PATH', "Set the log directory") do |dir|
@@ -776,6 +771,10 @@ class Rubac
 				puts "Error: #{dir} is not a directory"
 				exit 1
 			end
+		end
+		
+		opts.on('--log PATH', "Set the log file name") do |name|
+			@options.log = name
 		end
 
 		opts.on('-cHOST', '--client HOST', "Backup Client hostname") do |host|
@@ -855,7 +854,7 @@ class Rubac
 			set_command("snapshot")
 		end
 
-		opts.on('-t', '--list', "List the backup options") do
+		opts.on('-l', '--list', "List the backup options") do
 			set_command("list")
 		end
 
@@ -901,23 +900,25 @@ class Rubac
 		@config.load_xml(@options.dbname, @options.datadir)
 
 		@config.set_global_dest(@options.dest) if @options.dest
-		@options.dest = @config.get_global_dest
 
 		if @options.global
 			@config.global_updates(@options.update_cmd, @options.include, @options.exclude, @options.opts)
+			@config.set_global_key_value("ninc", @options.ninc) if @options.ninc
 		else
 			@config.client_updates(@options.client, @options.update_cmd, @options.include, @options.exclude, @options.opts)
+			@config.set_client_key_value(@options.client, "ninc", @options.ninc) if @options.ninc
 		end
 
 		@xml = @config.save_xml
 
+		@dest = @config.get_global_dest
 		@includes = @config.get_client_includes(@options.client)
 		@excludes = @config.get_client_excludes(@options.client)
 		@useropts = @config.get_client_opts(@options.client)
 		@sshopts  << " --dry-run" if @options.dry_run
 		@sshopts  << " --verbose" #if @options.verbose
 
-		if not File.exist?(@options.dest)
+		if not File.exist?(@dest)
 			puts "Warning: backup destination not set"
 		end
 	end
@@ -1080,7 +1081,7 @@ class Rubac
 	def run_command
 		host = @options.client
 
-		if @options.dest.length == 0
+		if @dest.length == 0
 			puts "Error: backup destination not set"
 			exit(1)
 		end
@@ -1099,7 +1100,7 @@ class Rubac
 
 		ldir = "__none__" if ldir.length == 0
 
-		pdest = File.join(@options.dest, @options.profile, host)
+		pdest = File.join(@dest, @options.profile, host)
 		FileUtils.mkdir_p(pdest)
 
 		# if flock(LOCK_EX|LOCK_NB) == false puts "cannot get exclusive lock"
@@ -1171,7 +1172,7 @@ class Rubac
 	end
 
 	def list_command_client_key(client, key, delim=",")
-		inc = @config.get_client_key(client, key, delim)
+		inc = @config.get_client_key_list(client, key, delim)
 		return if inc.length == 0
 		inc = inc.split("#{delim}")
 		printf "%10s=\n", key
@@ -1197,10 +1198,10 @@ class Rubac
 
 		puts "##### Global settings #####"
 		printf "%10s=%s\n", "profile", @options.profile
-		if @options.dest.length == 0
+		if @dest.length == 0
 			puts %Q(   *** Warning: backup destination not set)
 		else
-			printf %Q(%10s=%s\n), "dest", @options.dest
+			printf %Q(%10s=%s\n), "dest", @dest
 		end
 		printf %Q(%10s=%s\n), "ssh opts", @sshopts
 		printf %Q(\n)
