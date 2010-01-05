@@ -35,7 +35,7 @@
 #   -n, --dry-run           Perform a trial run of the backup
 #   -z, --compress          TODO Compress the file data during backup
 #
-#   -H, --history           TODO Backup history
+#   -H, --history[=INDEX]   TODO Backup history, or specify index to see backup details
 #   -T, --restore-to=PATH   TODO Restore to the given base path (default is TMP)
 #   -R, --restore=FILE      TODO Restore file as file[:index] if the incremental index is not given it defaults to most recent
 #   -F, --restore-from=FILE TODO Restore file list from the given file (comma or new line delimited)
@@ -666,6 +666,7 @@ class Rubac
 		@options.cmd = nil
 		@options.dry_run = false
 		@options.email = nil
+		@options.hist_index = nil
 
 		@options.tmp = ENV['TMP'].to_s
 		if @options.tmp.length > 0
@@ -858,8 +859,9 @@ class Rubac
 			set_command("list")
 		end
 
-		opts.on('-H', '--history', "Backup history") do
+		opts.on('-H', '--history [INDEX]', "Backup history") do |index|
 			set_command("history")
+			@options.hist_index = index.to_i if index != nil
 		end
 
 		opts.on('-v', '--version', "Print version") do
@@ -1224,6 +1226,20 @@ class Rubac
 
 	def history_command_display(cli, hist)
 		return if hist.nitems == 0
+
+		if @options.hist_index != nil
+			puts "#{@options.hist_index}: #{hist[0]}"
+			host = @options.client
+			logf = File.join(@dest, @options.profile, @options.client, hist[0], "rubac.log.yaml")
+			if File.exist?(logf)
+				log = File.open(logf) { |yf| YAML::load(yf) }
+				log.each do |line|
+					puts line
+				end
+			end
+			return
+		end
+
 		hist.each_index do |i|
 			puts "#{i}: #{hist[i]}"
 		end
@@ -1233,7 +1249,9 @@ class Rubac
 		entries = []
 		ninc = @config.get_client_ninc(cli)
 		return entries if ninc == nil or ninc == 0
+
 		ninc.times do |n|
+			next if @options.hist_index != nil and @options.hist_index != n
 			name = @config.get_client_incrementals(cli, n)
 			break if name.length == 0
 			entries << name
