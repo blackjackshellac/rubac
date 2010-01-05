@@ -18,7 +18,7 @@
 #   -i, --include=PATH      Include path, comma separate multiple paths
 #   -x, --exclude=PATH      Exclude path, comma separate multiple paths
 #   -o, --opts=OPTS         Extra rsync options
-#   -E, --delete=PATH       Delete any specified includes, excludes or opts
+#       --delete=PATH       TODO Delete any specified includes, excludes or opts
 #   -d, --dest=DEST         Local destination path (eg., /mnt/backup)
 #   -m, --mail=EMAIL        TODO Notification email, comma separated list
 #   -M, --smtp=SERVER       TODO IP Address of smtp server (default is localhost)
@@ -310,34 +310,66 @@ class Config_rubac
 		@config['globals'].to_hash
 	end
 
-	def append_global_key(item, key)
+	def del_global_key(item, key, delim=",")
+		return if key == nil or key.length == 0
+
+		return if not @config['globals'].has_key?(item)
+
+		items = []
+		items = @config['globals']["#{item}"].split(delim)
+		return if items.nitems == 0
+
+		keys = key.split(delim)
+		keys.each { |k|
+			k.strip!
+			items.delete(k)
+		}
+		@config['globals']["#{item}"] = items.join(delim)
+
+	end
+
+	def add_global_key(item, key, delim=",")
+		return if key == nil or key.length = 0
 		# key can be a comma separated list, should convert to array
 		# and compare all values of the with all values in keys below
-		keys = key.split(",")
+		keys = key.split(delim)
 		keys.each { |k| k.strip! }
 		
 		items = []
-		if @config['globals']["#{item}"].split(",").length > 0
-			items=@config['globals']["#{item}"].split(",")
+		if @config['globals']["#{item}"].split(delim).length > 0
+			items=@config['globals']["#{item}"].split(delim)
 		end
 		# merge, removing duplicates
 		items = items | keys
-		@config['globals']["#{item}"] = items.join(",")
+		@config['globals']["#{item}"] = items.join(delim)
+	end
+
+	# type is add/delete
+	def global_updates(type, inc, exc, opts)
+		if type == "delete"
+			del_global_key("includes", inc)
+			del_global_key("excludes", exc)
+			del_global_key("opts", opts, " ")
+		else
+			add_global_key("includes", inc)
+			add_global_key("excludes", exc)
+			add_global_key("opts", opts, " ")
+		end
 	end
 
 	# add the specified includes to the global include list
-	def append_global_includes(inc)
-		append_global_key("includes", inc)
+	def add_global_includes(inc)
+		add_global_key("includes", inc)
 	end
 
 	# add the specified excludes to the global exclude list
-	def append_global_excludes(exc)
-		append_global_key("excludes", exc)
+	def add_global_excludes(exc)
+		add_global_key("excludes", exc)
 	end
 
 	# add the specified opts to the global opts list
-	def append_global_opts(opts)
-		append_global_key("opts", opts)
+	def add_global_opts(opts)
+		add_global_key("opts", opts, " ")
 	end
 
 	def get_global_key_value(key, default = "")
@@ -418,35 +450,69 @@ class Config_rubac
 		@config['clients']["#{host}"]['incrementals']["#{n}"].to_s
 	end
 
+	def del_client_key(host, item, key, delim=",")
+		return if key == nil or key.length == 0
+		get_client_config(host)
+
+		return if not @config['clients']["#{host}"].has_key?(item)
+
+		items = []
+		items = @config['clients']["#{host}"]["#{item}"].split(delim)
+		return if items.nitems == 0
+
+		keys = key.split(delim)
+		keys.each { |k|
+			k.strip!
+			items.delete(k)
+		}
+		@config['clients']["#{host}"]["#{item}"] = items.join(delim)
+	end
+
 	# append (or set) the specified item for the specified client
-	def append_client_key(host, item, key)
+	def add_client_key(host, item, key, delim=",")
+		return if key == nil or key.length == 0
+
 		get_client_config(host)
 		# key can be a comma separated list, should convert to array
 		# and compare all values of the with all values in keys below
-		keys = key.split(",")
+		keys = key.split(delim)
 		keys.each { |k| k.strip! }
 
 		items = []
 		if @config['clients']["#{host}"]["#{item}"].length > 0
-			items = @config['clients']["#{host}"]["#{item}"].split(",")
+			items = @config['clients']["#{host}"]["#{item}"].split(delim)
 		end
 		items = items | keys
-		@config['clients']["#{host}"]["#{item}"] = items.join(",")
+		@config['clients']["#{host}"]["#{item}"] = items.join(delim)
 	end
 
+	# type is add/delete
+	def client_updates(host, type, inc, exc, opts)
+		if type == "delete"
+			del_client_key(host, "includes", inc)
+			del_client_key(host, "excludes", exc)
+			del_client_key(host, "opts", opts, " ")
+		else
+			add_client_key(host, "includes", inc)
+			add_client_key(host, "excludes", exc)
+			add_client_key(host, "opts", opts, " ")
+		end
+	end
+
+
 	# append (or set) includes for specified client
-	def append_client_includes(host, inc)
-		append_client_key(host, "includes", inc)
+	def add_client_includes(host, inc)
+		add_client_key(host, "includes", inc)
 	end
 
 	# append (or set) excludes for specified client
-	def append_client_excludes(host, exc)
-		append_client_key(host, "excludes", exc)
+	def add_client_excludes(host, exc)
+		add_client_key(host, "excludes", exc)
 	end
 
 	# append (or set) opts for specified client
-	def append_client_opts(host, opts)
-		append_client_key(host, "opts", opts)
+	def add_client_opts(host, opts)
+		add_client_key(host, "opts", opts, " ")
 	end
 
 	def get_clients
@@ -464,7 +530,7 @@ class Config_rubac
 
 		inc = []
 		if @config['globals']["#{key}"].length > 0
-			inc = @config['globals']["#{key}"].split(",")
+			inc = @config['globals']["#{key}"].split(delim)
 		end
 
 		if @config['clients']["#{host}"]["#{key}"].length > 0
@@ -597,6 +663,7 @@ class Rubac
 
 		@options.verbose = false
 		@options.quiet = false
+		@options.update_cmd = "add" 
 		@options.include = nil
 		@options.exclude = nil
 		@options.dest = nil
@@ -686,6 +753,10 @@ class Rubac
 		opts.on('-q', '--quiet',   "Run quietly")      { @options.quiet = true }
 
 		opts.on('-g', '--global', "Apply options to the global profile") { @options.global = true }
+
+		opts.on('--delete', "Delete any specified includes, excludes, etc") {
+			@options.update_cmd = "delete"
+		}
 
 		opts.on('-LPATH', '--logdir PATH', "Set the log directory") do |dir|
 			if not File.exist?(dir)
@@ -833,23 +904,9 @@ class Rubac
 		@options.dest = @config.get_global_dest
 
 		if @options.global
-			@config.append_global_includes(@options.include) if @options.include
-			@config.append_global_excludes(@options.exclude) if @options.exclude
-			@config.append_global_opts(@options.opts) if @options.opts
-			@config.set_global_ninc(@options.ninc) if @options.ninc
+			@config.global_updates(@options.update_cmd, @options.include, @options.exclude, @options.opts)
 		else
-			if @options.include
-				@config.append_client_includes(@options.client, @options.include)
-			end
-			if @options.exclude
-				@config.append_client_excludes(@options.client, @options.exclude)
-			end
-			if @options.opts
-				@config.append_client_opts(@options.client, @options.opts)
-			end
-			if @options.ninc
-				@config.set_client_ninc(@options.client, @options.ninc)
-			end
+			@config.client_updates(@options.client, @options.update_cmd, @options.include, @options.exclude, @options.opts)
 		end
 
 		@xml = @config.save_xml
