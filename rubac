@@ -2,7 +2,7 @@
 #
 # == Synopsis 
 #   A ruby backup front-end powered by rsync that can save
-#   multiple backup profiles between uses in an sqlite database
+#   multiple backup profiles between uses.
 #
 # == Usage 
 #   rubac [options]
@@ -21,7 +21,7 @@
 #       --delete=PATH       Delete any specified includes, excludes or opts
 #   -d, --dest=DEST         Local destination path (eg., /mnt/backup)
 #   -m, --mail=EMAIL        TODO Notification email, comma separated list
-#   -M, --smtp=SERVER       TODO IP Address of smtp server (default is localhost)
+#       --smtp=SERVER       TODO IP Address of smtp server (default is localhost)
 #
 #   -L, --logdir=PATH       TODO Directory for logging (root default is /var/log/rubac, otherwise TMP)
 #       --log[=NAME]        TODO Name of log file, (default is %profile%.%run_date%.log)
@@ -134,42 +134,96 @@ UPDATE_CMD_ADD="add"
 UPDATE_CMD_DEL="delete"
 
 class Email
-	def address_email(addr, name="")
+
+	attr_accessor :server
+
+	def initialize(server="localhost")
+		@server=server
+		@to = []
+		@from = {}
+		@attach = nil
+	end
+
+	def address_email(addr, name=nil)
+		return if not addr
+		addr.strip!
+		name.strip! if name
 		eaddr = { :name => name, :addr => addr }
 		eaddr.to_hash
 	end
 
-	def send_email(from, to, subject, body, server='localhost')
+	def to(addr, name=nil)
+		@to << address_email(addr, name)
+	end
+
+	def from(addr, name=nil)
+		@from = address_email(addr, name)
+	end
+
+	def send(subject, body, server='localhost')
+		tstr = ""
+		@to.each do |a|
+			tstr << "#{a[:name]} " if a[:name]
+			tstr << "<#{a[:addr]}>, "
+		end
+		fstr = ""
+		fstr << "#{@from[:name]} " if @from[:name]
+		fstr << "<#{@from[:addr]}> "
+
+		sstr = "#{subject}"
+
 		msg = <<END_OF_MESSAGE
-From: #{from[:name]} <#{from[:addr]}>
-To: #{to[:name]} <#{to[:addr]}>
-Subject: #{subject}
+From: #{fstr}
+To: #{tstr}
+Subject: #{sstr}
  
 #{body}
 END_OF_MESSAGE
  
+		@to.each { |a|
 		Net::SMTP.start(server) do |smtp|
-			smtp.send_message msg, from[:addr], to[:addr]
+			smtp.send_message msg, @from[:addr], a[:addr]
 		end
+		}
 	end
 end
 
-module SzMsg
-	@console = true
-	@syslog = false
-	@privlog = true
-	@notify = false
-	@loglevels = {	"emerg"  => 0,
-			"alert"  => 1,
-			"crit"   => 2,
-			"err"    => 3,
-			"warn"   => 4,
-			"notice" => 5,
-			"info"   => 6,
-			"debug"  => 7 }
-	# default log level
-	@loglevel = @loglevels["info"]
+module MsgLogging
+	attr :console
+	attr :syslog
+	attr :privlog
+	attr :notify
+	attr :loglevels
+	attr :loglevel
 
+	def initialize
+		@console = true
+		@syslog = false
+		@privlog = true
+		@notify = false
+		@loglevels = {	"emerg"  => 0,
+				"alert"  => 1,
+				"crit"   => 2,
+				"err"    => 3,
+				"warn"   => 4,
+				"notice" => 5,
+				"info"   => 6,
+				"debug"  => 7 }
+		# default log level
+		@loglevel = @loglevels["info"]
+	end
+private
+	def MLmessage(msg, lvl)
+		# console
+		# syslog
+		# private log
+		# notification
+		puts "shit" if not @loglevels.has_key?(lvl)
+		return if @loglevels[lvl].to_i > @loglevel
+		puts msg if @console
+		#msg_buffer << msg if @notify
+	end
+public
 	def level(lvl)
 		if @loglevels[lvl].has_key?
 			@loglevel = @loglevels[lvl]
@@ -179,54 +233,32 @@ module SzMsg
 		end
 	end
 
-	def message(msg, level)
-		# console
-		# syslog
-		# private log
-		# notification
-		return if @loglevels[level] > @loglevel
-		print "#{msg}\n" if @console
-		notify_buffer << msg if @notify
-	end
-
-	def printf(fmt, msg)
-		sprintf(msg, fmt, msg)
-		message(msg, "info")
-	end
-
 	def info(msg)
-		message(msg, "info")
+		MLmessage(msg, "info")
 	end
 
 	def warning(msg)
-		msg = "Warning: #{msg}"
-		message(msg, "warn")
+		MLmessage("Warning: " + msg, "warn")
 	end
 
 	def err(msg)
-		msg = "Error: #{msg}"
-		message(msg, "err")
+		MLmessage("Error: " + msg, "err")
 	end
 
 	def debug(msg)
-		msg = "Debug: #{msg}"
-		message(msg, "debug")
+		MLmessage("Debug: " + msg, "debug")
 	end
 
 	def alert(msg)
-		msg = "Alert: #{msg}"
-		message(msg, "alert")
+		MLmessage("Alert: " + msg, "alert")
 	end
 
 	def die(msg, e=1)
-		alert(msg)
+		err(msg)
 		exit e
 	end
 end
  
-#require 'rubac_db'
-#require 'szmsg'
-
 #
 # rsync version must be at least 2.5.6 for --link-dest option
 #
@@ -560,6 +592,7 @@ end
 
 class Rubac
 	#include Szmsg
+	include MsgLogging
 
 	attr_reader :options
 
@@ -666,6 +699,7 @@ class Rubac
 		@options.cmd = nil
 		@options.dry_run = false
 		@options.email = nil
+		@options.smtp = nil
 		@options.hist_index = nil
 
 		@options.tmp = ENV['TMP'].to_s
@@ -818,6 +852,10 @@ class Rubac
 			@options.email = email
 		end
 
+		opts.on('--smtp SERVER', "SMTP server address") do |server|
+			@options.smtp = server
+		end
+
 		opts.on('-u', '--update', "Perform an update backup ignoring incrementals") {
 			@options.update = true
 			set_command("run")
@@ -902,6 +940,8 @@ class Rubac
 		@config.load_xml(@options.dbname, @options.datadir)
 
 		@config.set_global_dest(@options.dest) if @options.dest
+
+		@config.set_global_key_value("smtp", @options.smtp) if @options.smtp
 
 		if @options.global
 			@config.global_updates(@options.update_cmd, @options.include, @options.exclude, @options.opts)
@@ -1217,11 +1257,21 @@ class Rubac
 			list_command_client(@options.client)
 		end
 
-		#to = address_email("steeve.mccauley@gmail.com", "Steeve McCauley")
-		#from = address_email("rubac@linguini.home", "Rubac Backup User")
-		#subject = "Rubac Test"
-		#body = "This is a test email\nThis is the second line\nThis is the last line\n"
-		#send_email(from, to, subject, body, "relais.videotron.ca")
+		puts "##### Email test"
+		email = Email.new
+		email.server = @config.get_global_key_value("smtp")
+		email.to("steeve.mccauley@gmail.com", "Steeve McCauley")
+		email.to("steeve@oneguycoding.com", "One Guy Coding")
+		email.from("rubac@linguini.home", "Rubac Backup User")
+		subject = "Rubac Test"
+		body = "This is a test email\nThis is the second line\nThis is the last line\n"
+		#email.send(subject, body, @config.get_global_key_value("smtp", nil))
+
+		debug("this is a debug message")
+		info("this is an info message")
+		warn("this is a warning message")
+		err("this is a warning message")
+		die("this is a die message")
 	end
 
 	def history_command_display(cli, hist)
