@@ -188,15 +188,16 @@ END_OF_MESSAGE
 	end
 end
 
-module MsgLogging
-	attr :console
-	attr :syslog
-	attr :privlog
-	attr :notify
-	attr :loglevels
-	attr :loglevel
+module Msg
+	attr_accessor :console
+	attr_accessor :syslog
+	attr_accessor :privlog
+	attr_accessor :notify
+	attr_accessor :loglevels
+	attr_accessor :loglevel
 
 	def initialize
+		puts "Init Msg"
 		@console = true
 		@syslog = false
 		@privlog = true
@@ -592,7 +593,7 @@ end
 
 class Rubac
 	#include Szmsg
-	include MsgLogging
+	include Msg
 
 	attr_reader :options
 
