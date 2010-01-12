@@ -15,6 +15,7 @@
 #   -D, --datadir=PATH      Configuration directory (if root /etc/rubac otherwise ~/.rubac)
 #
 #   -c, --client=HOST       Client to backup (default is localhost)
+#   -a, --address=HOST      Set the client host address (default is the client name)
 #   -i, --include=PATH      Include path, comma separate multiple paths
 #   -x, --exclude=PATH      Exclude path, comma separate multiple paths
 #   -o, --opts=OPTS         Extra rsync options
@@ -108,6 +109,7 @@ require 'ostruct'
 require 'date'
 require 'socket'
 require 'tmpdir'
+require 'open3'
 
 require 'xmlsimple'
 
@@ -309,7 +311,7 @@ class Config_rubac
 			},
 			'clients' => {
 				'localhost' => {
-					'host' => '',
+					'address' => '',
 					'includes' => '',
 					'excludes' => '',
 					'opts' => '',
@@ -576,7 +578,8 @@ class Config_rubac
 			entries = entries | @config['clients']["#{host}"]["#{key}"].split(delim)
 		end
 
-		if host != "localhost" and key == "includes"
+		addr = get_client_address(host)
+		if addr != "localhost" and key == "includes"
 			entries.each_index do |i|
 				entries[i] = "#{host}:" + entries[i]
 			end
@@ -609,6 +612,12 @@ class Config_rubac
 	def get_client_ninc(host)
 		# TODO if client ninc is not set use global ninc
 		get_client_key_value(host, 'ninc').to_i
+	end
+
+	def get_client_address(host)
+		addr = get_client_key_value(host, 'address')
+		addr = host if addr.length == 0
+		addr
 	end
 end
 
@@ -721,6 +730,7 @@ class Rubac
 		@options.email = nil
 		@options.smtp = nil
 		@options.hist_index = nil
+		@options.address = nil
 
 		@options.tmp = ENV['TMP'].to_s
 		if @options.tmp.length > 0
@@ -835,6 +845,11 @@ class Rubac
 		opts.on('-cHOST', '--client HOST', "Backup Client hostname") do |host|
 			host.strip!
 			@options.client = host
+		end
+
+		opts.on('-aHOST', '--address HOST', "Address of the specified client") do |address|
+			address.strip!
+			@options.address = address
 		end
 
 		opts.on('-DPATH', '--datadir PATH', "Database directory") do |dir|
@@ -968,6 +983,7 @@ class Rubac
 			@config.set_global_key_value("ninc", @options.ninc) if @options.ninc
 		else
 			@config.client_updates(@options.client, @options.update_cmd, @options.include, @options.exclude, @options.opts)
+			@config.set_client_key_value(@options.client, "address", @options.address) if @options.address
 			@config.set_client_key_value(@options.client, "ninc", @options.ninc) if @options.ninc
 		end
 
@@ -977,6 +993,7 @@ class Rubac
 		@includes = @config.get_client_includes(@options.client)
 		@excludes = @config.get_client_excludes(@options.client)
 		@useropts = @config.get_client_opts(@options.client)
+		@address = @config.get_client_address(@options.client)
 		@sshopts  << " --dry-run" if @options.dry_run
 		@sshopts  << " --verbose" #if @options.verbose
 
@@ -1091,8 +1108,8 @@ class Rubac
 		end
 		cmd << %Q( #{inc} #{bdest})
 		puts %Q(#{cmd})
-		p = IO.popen(%Q(#{cmd}))
-		while (line = p.gets)
+		Open3.popen3(cmd) { |stdin,stdout,stderr|
+			line = stdout.read
 			line.chop!
 			# if deleting, remove the file from 'log', if it exists
 			# ^deleting home/rico/.thumbnails/normal/6bf9e300a41296740a5fdd89b98e1d93.png
@@ -1105,7 +1122,16 @@ class Rubac
 			else
 				puts "::#{line}::"
 			end
-		end
+
+			line = stderr.read
+			line.chop!
+			puts "ERROR: #{line}" if line.length > 0
+
+		}
+		#p = IO.popen(%Q(#{cmd}))
+		#while (line = p.gets)
+		#end
+		
 		## TODO get status of command??
 		status=$?
 		p status
@@ -1237,9 +1263,14 @@ class Rubac
 		inc = @config.get_client_key_list(client, key, delim)
 		return if inc.length == 0
 		inc = inc.split("#{delim}")
-		printf "%10s=\n", key
+		printf "%10s=", key
+
+		if inc.nitems > 1
 		inc.each do |i|
-			printf "\t%-12s\n", i
+			printf "\n\t%-12s", i
+		end
+		else
+			printf "%s", inc[0]
 		end
 		puts ""
 	end
@@ -1249,6 +1280,7 @@ class Rubac
 		list_command_client_key(client, 'includes')
 		list_command_client_key(client, 'excludes')
 		list_command_client_key(client, 'opts', " ")
+		list_command_client_key(client, 'ninc')
 	end
 
 	def list_command
@@ -1268,6 +1300,7 @@ class Rubac
 		printf %Q(%10s=%s\n), "ssh opts", @sshopts
 		printf %Q(\n)
 
+		puts "address=#{@address}"
 		if @options.client == "localhost"
 			clients = @config.get_clients
 			clients.each_key do |cli|
