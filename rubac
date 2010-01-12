@@ -188,7 +188,7 @@ END_OF_MESSAGE
 	end
 end
 
-module Msg
+class Msg
 	attr_accessor :console
 	attr_accessor :syslog
 	attr_accessor :privlog
@@ -196,13 +196,12 @@ module Msg
 	attr_accessor :loglevels
 	attr_accessor :loglevel
 
-	def initialize
-		puts "Init Msg"
-		@console = true
-		@syslog = false
-		@privlog = true
-		@notify = false
-		@loglevels = {	"emerg"  => 0,
+	def initialize(dest=nil)
+		me=self.class.name
+
+		puts "Init #{me}: #{dest}"
+
+		@LOGLEVELS = {	"emerg"  => 0,
 				"alert"  => 1,
 				"crit"   => 2,
 				"err"    => 3,
@@ -210,8 +209,30 @@ module Msg
 				"notice" => 5,
 				"info"   => 6,
 				"debug"  => 7 }
+
+		@loglevel = @LOGLEVELS["info"]
+
+		@console = true
+		@syslog = false
+		@privlog = true
+		@notify = false
+
+		return if dest == nil
+
+		adest = dest.split(",")
+		adest.each do |d|
+			d.strip!
+			puts "Setting dest=#{d}"
+			case d
+			when 'console'
+				@console = true
+			when 'syslog'
+				@syslog = true
+			else
+				puts "Unknown log destination in #{me}"
+			end
+		end
 		# default log level
-		@loglevel = @loglevels["info"]
 	end
 private
 	def MLmessage(msg, lvl)
@@ -219,17 +240,17 @@ private
 		# syslog
 		# private log
 		# notification
-		puts "shit" if not @loglevels.has_key?(lvl)
-		return if @loglevels[lvl].to_i > @loglevel
+		puts "shit" if not @LOGLEVELS.has_key?(lvl)
+		return if @LOGLEVELS[lvl].to_i > @loglevel
 		puts msg if @console
 		#msg_buffer << msg if @notify
 	end
 public
 	def level(lvl)
-		if @loglevels[lvl].has_key?
-			@loglevel = @loglevels[lvl]
+		if @LOGLEVELS[lvl].has_key?
+			@loglevel = @LOGLEVELS[lvl]
 		else
-			@loglevel = @loglevels["info"]
+			@loglevel = @LOGLEVELS["info"]
 			err "Unknown log level"
 		end
 	end
@@ -238,7 +259,7 @@ public
 		MLmessage(msg, "info")
 	end
 
-	def warning(msg)
+	def warn(msg)
 		MLmessage("Warning: " + msg, "warn")
 	end
 
@@ -592,8 +613,6 @@ class Config_rubac
 end
 
 class Rubac
-	#include Szmsg
-	include Msg
 
 	attr_reader :options
 
@@ -772,7 +791,7 @@ class Rubac
 		if @options.cmd == nil
 			@options.cmd="#{c}_command"
 		else
-			warn "Command is already set to #{@options.cmd}, ignoring #{c} command"
+			puts "Warning: Command is already set to #{@options.cmd}, ignoring #{c} command"
 		end
 	end
 
@@ -1268,11 +1287,11 @@ class Rubac
 		body = "This is a test email\nThis is the second line\nThis is the last line\n"
 		#email.send(subject, body, @config.get_global_key_value("smtp", nil))
 
-		debug("this is a debug message")
-		info("this is an info message")
-		warn("this is a warning message")
-		err("this is a warning message")
-		die("this is a die message")
+		$o.debug("this is a debug message")
+		$o.info("this is an info message")
+		$o.warn("this is a warning message")
+		$o.err("this is a warning message")
+		$o.die("this is a die message")
 	end
 
 	def history_command_display(cli, hist)
@@ -1352,6 +1371,8 @@ class Rubac
 		# end
 	#end
 end
+
+$o = Msg.new("console,syslog,fart")
 
 rubac = Rubac.new(ARGV, STDIN)
 rubac.main
