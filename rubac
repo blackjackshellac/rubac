@@ -640,7 +640,7 @@ class Rubac
 		if ENV['RUBAC_SSHOPTS']
 			@sshopts = ENV['RUBAC_SSHOPTS']
 		else
-			@sshopts = "-a"
+			@sshopts = "-a -v -v"
 		end
 		@sshopts << " --relative --delete --delete-excluded --ignore-errors"
 
@@ -995,7 +995,6 @@ class Rubac
 		@useropts = @config.get_client_opts(@options.client)
 		@address = @config.get_client_address(@options.client)
 		@sshopts  << " --dry-run" if @options.dry_run
-		@sshopts  << " --verbose" #if @options.verbose
 
 		if not File.exist?(@dest)
 			puts "Warning: backup destination not set"
@@ -1075,11 +1074,11 @@ class Rubac
 			if File.lstat(p).directory?
 				q << "/"
 				log << "#{q}"
-				puts ":d:#{q}:d:"
+				#puts ":d:#{q}:d:"
 				run_command_fill(droot, p, log)
 			end
 			log << "#{q}"
-			puts ":f:#{q}:f:"
+			#puts ":f:#{q}:f:"
 		}
 	end
 
@@ -1089,6 +1088,7 @@ class Rubac
 		if File.exist?(logf)
 			fill = false
 			log = File.open(logf) { |yf| YAML::load(yf) }
+			puts "Log found: loaded #{logf} with #{log.nitems}"
 		else
 			fill = true
 			log = Array.new
@@ -1108,12 +1108,44 @@ class Rubac
 		end
 		cmd << %Q( #{inc} #{bdest})
 		puts %Q(#{cmd})
-		Open3.popen3(cmd) { |stdin,stdout,stderr|
-			line = stdout.read
+		#Open3.popen3(cmd) { |stdin,stdout,stderr|
+		#	line = stdout.read
+		#	line.chop!
+		#	puts "DD:#{line}:DD"
+		#	# if deleting, remove the file from 'log', if it exists
+		#	# ^deleting home/rico/.thumbnails/normal/6bf9e300a41296740a5fdd89b98e1d93.png
+		#	if line[/^#{inc}.*/]
+		#		puts "ii#{line}ii"
+		#		log << line
+		#	elsif line[/.*\sis uptodate$/]
+		#		line.sub!(/\s is uptodate/, "")
+		#		line = "/" + line
+		#		puts "uu#{line}uu"
+		#	elsif line[/^\s*deleting\s+/]
+		#		line.sub!(/^\s*deleting\s+/, "/")
+		#		puts "xx#{line}xx"
+		#		log.delete(line)
+		#	else
+		#		puts "::#{line}::"
+		#	end
+		#
+		#	line = stderr.read
+		#	line.chop!
+		#	puts "ERROR: #{line}" if line.length > 0
+		#
+		#}
+		p = IO.popen(cmd)
+		while (line = p.gets)
 			line.chop!
 			# if deleting, remove the file from 'log', if it exists
 			# ^deleting home/rico/.thumbnails/normal/6bf9e300a41296740a5fdd89b98e1d93.png
 			if line[/^#{inc}.*/]
+				puts "ii#{line}ii"
+				log << line
+			elsif line[/\sis uptodate$/]
+				line.sub!(/\sis uptodate$/, "")
+				line = "/" + line
+				puts "uu:#{line}:uu"
 				log << line
 			elsif line[/^\s*deleting\s+/]
 				line.sub!(/^\s*deleting\s+/, "/")
@@ -1122,15 +1154,7 @@ class Rubac
 			else
 				puts "::#{line}::"
 			end
-
-			line = stderr.read
-			line.chop!
-			puts "ERROR: #{line}" if line.length > 0
-
-		}
-		#p = IO.popen(%Q(#{cmd}))
-		#while (line = p.gets)
-		#end
+		end
 		
 		## TODO get status of command??
 		status=$?
