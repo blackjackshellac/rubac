@@ -579,20 +579,19 @@ class Config_rubac
 			# eliminate duplicates, if any
 			entries = entries | @config['clients']["#{host}"]["#{key}"].split(delim)
 		end
-
-		addr = get_client_address(host)
-		if addr != "localhost" and key == "includes"
-			entries.each_index do |i|
-				entries[i] = "#{host}:" + entries[i]
-			end
-		end
-
 		entries.join(delim)
 	end
 
 	def get_client_includes(host)
-		get_client_key_list(host, 'includes')
-
+		includes = get_client_key_list(host, 'includes').split(",")
+		addr = get_client_address(host)
+		puts "addr=#{addr}"
+		if addr != "localhost" and addr != "127.0.0.1"
+			includes.each_index do |i|
+				includes[i] = "#{host}:" + includes[i]
+			end
+		end
+		includes.join(",")
 	end
 
 	def get_client_excludes(host)
@@ -620,6 +619,7 @@ class Config_rubac
 		addr = get_client_key_value(host, 'address')
 		addr = host if addr.length == 0
 		addr = "localhost" if addr == "127.0.0.1"
+		addr
 	end
 end
 
@@ -1138,22 +1138,28 @@ class Rubac
 		p = IO.popen(cmd)
 		while (line = p.gets)
 			line.chop!
-			# if deleting, remove the file from 'log', if it exists
-			# ^deleting home/rico/.thumbnails/normal/6bf9e300a41296740a5fdd89b98e1d93.png
+
+			if line[/^#{inc[1..-1]}/]
+				line = "/" + line
+				puts ">#{line}" if $debug
+			end
+
 			if line[/^#{inc}.*/]
-				puts "ii#{line}ii"
+				puts "ii#{line}ii" if $debug
 				log << line
 			elsif line[/\sis uptodate$/]
 				line.sub!(/\sis uptodate$/, "")
 				line = "/" + line
-				puts "uu:#{line}:uu"
+				puts "uu:#{line}:uu" if $debug
 				log << line
 			elsif line[/^\s*deleting\s+/]
+			# if deleting, remove the file from 'log', if it exists
+			# ^deleting home/rico/.thumbnails/normal/6bf9e300a41296740a5fdd89b98e1d93.png
 				line.sub!(/^\s*deleting\s+/, "/")
-				puts "xx#{line}xx"
+				puts "xx#{line}xx" if $debug
 				log.delete(line)
 			else
-				puts "::#{line}::"
+				puts "$ #{line}"
 			end
 		end
 		
