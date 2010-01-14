@@ -14,7 +14,7 @@
 #   -p, --profile=NAME      Name of backup profile (default is rubac)
 #   -D, --datadir=PATH      Configuration directory (if root /etc/rubac otherwise ~/.rubac)
 #
-#   -c, --client=HOST       Client to backup (default is localhost)
+#   -c, --client=HOST       Client to backup (default is localhost), can specify multiple clients
 #   -a, --address=HOST      Set the client host address (default is the client name)
 #   -i, --include=PATH      Include path, comma separate multiple paths
 #   -x, --exclude=PATH      Exclude path, comma separate multiple paths
@@ -116,6 +116,8 @@ require 'xmlsimple'
 require 'net/smtp'
 require 'rbconfig'	# ruby config
 
+#$debug = true
+
 CONFIG_KEY_VER="version"
 CONFIG_KEY_VER_MAJ="major"
 CONFIG_KEY_VER_MIN="minor"
@@ -201,7 +203,7 @@ class Msg
 	def initialize(dest=nil)
 		me=self.class.name
 
-		puts "Init #{me}: #{dest}"
+		puts "Init #{me}: #{dest}" if @debug
 
 		@LOGLEVELS = {	"emerg"  => 0,
 				"alert"  => 1,
@@ -224,14 +226,14 @@ class Msg
 		adest = dest.split(",")
 		adest.each do |d|
 			d.strip!
-			puts "Setting dest=#{d}"
+			puts "Setting dest=#{d}" if @debug
 			case d
 			when 'console'
 				@console = true
 			when 'syslog'
 				@syslog = true
 			else
-				puts "Unknown log destination in #{me}"
+				puts "Unknown log destination \"#{d}\" in #{me}"
 			end
 		end
 		# default log level
@@ -348,7 +350,7 @@ class Config_rubac
 			@config = @def_config.to_hash
 		end
 		puts "##### load_xml #{@xml_file}" if @debug
-		puts "YAML.dump=" + YAML.dump(@config) + "\n"
+		puts "YAML.dump=" + YAML.dump(@config) + "\n" if $debug
 
 		align_version
 	end
@@ -617,7 +619,7 @@ class Config_rubac
 	def get_client_address(host)
 		addr = get_client_key_value(host, 'address')
 		addr = host if addr.length == 0
-		addr
+		addr = "localhost" if addr == "127.0.0.1"
 	end
 end
 
@@ -677,9 +679,10 @@ class Rubac
 		#	@options.client = "localhost"
 		#end
 		if ENV['RUBAC_CLIENT'] and ENV['RUBAC_CLIENT'].length > 0
-			@options.client = ENV['RUBAC_CLIENT']
+			clients = ENV['RUBAC_CLIENT']
+			@options.client = clients.split(",")
 		else
-			@options.client = "localhost"
+			@options.client = [ ]
 		end
 
 		# 
@@ -844,7 +847,8 @@ class Rubac
 
 		opts.on('-cHOST', '--client HOST', "Backup Client hostname") do |host|
 			host.strip!
-			@options.client = host
+			@options.client << host
+			@options.client.uniq!
 		end
 
 		opts.on('-aHOST', '--address HOST', "Address of the specified client") do |address|
@@ -978,31 +982,25 @@ class Rubac
 
 		@config.set_global_key_value("smtp", @options.smtp) if @options.smtp
 
+		if @options.client.nitems == 0
+			@options.client << "all"
+		end
+
 		if @options.global
 			@config.global_updates(@options.update_cmd, @options.include, @options.exclude, @options.opts)
 			@config.set_global_key_value("ninc", @options.ninc) if @options.ninc
 		else
-			@config.client_updates(@options.client, @options.update_cmd, @options.include, @options.exclude, @options.opts)
-			@config.set_client_key_value(@options.client, "address", @options.address) if @options.address
-			@config.set_client_key_value(@options.client, "ninc", @options.ninc) if @options.ninc
+			@options.client.each do |client|
+				@config.client_updates(client, @options.update_cmd, @options.include, @options.exclude, @options.opts)
+				@config.set_client_key_value(client, "address", @options.address) if @options.address
+				@config.set_client_key_value(client, "ninc", @options.ninc) if @options.ninc
+			end
 		end
 
 		@xml = @config.save_xml
-
-		@dest = @config.get_global_dest
-		@includes = @config.get_client_includes(@options.client)
-		@excludes = @config.get_client_excludes(@options.client)
-		@useropts = @config.get_client_opts(@options.client)
-		@address = @config.get_client_address(@options.client)
-		@sshopts  << " --dry-run" if @options.dry_run
-
-		if not File.exist?(@dest)
-			puts "Warning: backup destination not set"
-		end
 	end
     
 	def help_command 
-		version_command
 		# RDoc::usage doesn't work in 1.9.x
 		RDoc::usage('Synopsis', 'Usage', 'Options') #exits app
 	end
@@ -1191,7 +1189,7 @@ class Rubac
 
 	# backup to bdir with hardlink to ldir, if it exists
 	def run_command
-		host = @options.client
+		host = @client
 
 		if @dest.length == 0
 			puts "Error: backup destination not set"
@@ -1284,8 +1282,15 @@ class Rubac
 	end
 
 	def list_command_client_key(client, key, delim=",")
-		inc = @config.get_client_key_list(client, key, delim)
+		if delim
+			inc = @config.get_client_key_list(client, key, delim)
+		else
+			inc = @config.get_client_key_value(client, key)
+			delim = " "
+		end
+
 		return if inc.length == 0
+
 		inc = inc.split("#{delim}")
 		printf "%10s=", key
 
@@ -1300,19 +1305,17 @@ class Rubac
 	end
 
 	def list_command_client(client)
+		return if client == "all"
 		puts "##### #{client} #####"
 		list_command_client_key(client, 'includes')
 		list_command_client_key(client, 'excludes')
 		list_command_client_key(client, 'opts', " ")
-		list_command_client_key(client, 'ninc')
+		list_command_client_key(client, 'ninc', nil)
 	end
 
-	def list_command
-
-		if @options.verbose
-			puts "##### Configuration #####"
-			puts "#{@xml}\n"
-		end
+	def list_command_global_settings
+		return if @global_settings
+		@global_settings = true
 
 		puts "##### Global settings #####"
 		printf "%10s=%s\n", "profile", @options.profile
@@ -1323,15 +1326,25 @@ class Rubac
 		end
 		printf %Q(%10s=%s\n), "ssh opts", @sshopts
 		printf %Q(\n)
+		@global_settings = true
+	end
 
-		puts "address=#{@address}"
-		if @options.client == "localhost"
+	def list_command
+
+		if @options.verbose
+			puts "##### Configuration #####"
+			puts "#{@xml}\n"
+		end
+
+		list_command_global_settings
+
+		if @client == "all"
 			clients = @config.get_clients
 			clients.each_key do |cli|
 				list_command_client(cli)
 			end
 		else
-			list_command_client(@options.client)
+			list_command_client(@client)
 		end
 
 		puts "##### Email test"
@@ -1344,31 +1357,32 @@ class Rubac
 		body = "This is a test email\nThis is the second line\nThis is the last line\n"
 		#email.send(subject, body, @config.get_global_key_value("smtp", nil))
 
-		$o.debug("this is a debug message")
-		$o.info("this is an info message")
-		$o.warn("this is a warning message")
-		$o.err("this is a warning message")
-		$o.die("this is a die message")
+		#$o.debug("this is a debug message")
+		#$o.info("this is an info message")
+		#$o.warn("this is a warning message")
+		#$o.err("this is a warning message")
+		#$o.die("this is a die message")
 	end
 
 	def history_command_display(cli, hist)
 		return if hist.nitems == 0
 
 		if @options.hist_index != nil
-			puts "#{@options.hist_index}: #{hist[0]}"
-			host = @options.client
-			logf = File.join(@dest, @options.profile, @options.client, hist[0], "rubac.log.yaml")
+			puts "#{cli}:#{@options.hist_index}: #{hist[0]}"
+			logf = File.join(@dest, @options.profile, @client, hist[0], "rubac.log.yaml")
 			if File.exist?(logf)
 				log = File.open(logf) { |yf| YAML::load(yf) }
 				log.each do |line|
 					puts line
 				end
+			else
+				puts "Error: opening #{logf}"
 			end
 			return
 		end
 
 		hist.each_index do |i|
-			puts "#{i}: #{hist[i]}"
+			puts "#{cli}:#{i}: #{hist[i]}"
 		end
 	end
 
@@ -1388,12 +1402,13 @@ class Rubac
 
 	def history_command
 		hist = []
-		host = @options.client
-		puts "TODO history command"
+		host = @client
+		puts "##### history command #####"
 		# look in /bdest/profile/client/rubac.date,.../rubac.log.yaml
-		if host == "localhost"
+		if host == "all"
 			clients = @config.get_clients
 			clients.each_key do |cli|
+				@client = cli
 				hist = history_command_get_history(cli)
 				history_command_display(cli, hist)
 			end
@@ -1408,10 +1423,36 @@ class Rubac
 		puts "#{File.basename(__FILE__)} " + ver
 	end
     
+	def process_command_client(client)
+		@client = client
+		@includes = @config.get_client_includes(client)
+		@excludes = @config.get_client_excludes(client)
+		@useropts = @config.get_client_opts(client)
+		@address = @config.get_client_address(client)
+
+		eval @options.cmd
+	end
+
 	def process_command
-		if @options.cmd
-			version_command
-			eval @options.cmd if @options.cmd != "version_command"
+		@dest = @config.get_global_dest
+
+		puts "Warning: backup destination not set" if not File.exist?(@dest)
+
+		@sshopts  << " --dry-run" if @options.dry_run
+
+		version_command
+
+		case @options.cmd
+		when "version_command"
+			# already done above
+		when "help_command", "usage_command"
+			eval @options.cmd
+		when "run_command", "snapshot_command", "list_command", "history_command"
+			@options.client.each do |client|
+				puts ">>>>> Running #{@options.cmd} for #{client}"
+				process_command_client(client)
+				puts "<<<<< Done running #{@options.cmd} for #{client}"
+			end
 		else
 			puts "huh? #{Config::CONFIG['host_os']}"
 		end
