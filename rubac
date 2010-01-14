@@ -983,7 +983,10 @@ class Rubac
 		@config.set_global_key_value("smtp", @options.smtp) if @options.smtp
 
 		if @options.client.nitems == 0
-			@options.client << "all"
+			#@config.get_clients.each_key do |client|
+			#	@options.client << client
+			#end
+			@options.client = @config.get_clients.keys
 		end
 
 		if @options.global
@@ -1305,7 +1308,6 @@ class Rubac
 	end
 
 	def list_command_client(client)
-		return if client == "all"
 		puts "##### #{client} #####"
 		list_command_client_key(client, 'includes')
 		list_command_client_key(client, 'excludes')
@@ -1338,23 +1340,16 @@ class Rubac
 
 		list_command_global_settings
 
-		if @client == "all"
-			clients = @config.get_clients
-			clients.each_key do |cli|
-				list_command_client(cli)
-			end
-		else
-			list_command_client(@client)
-		end
+		list_command_client(@client)
 
-		puts "##### Email test"
-		email = Email.new
-		email.server = @config.get_global_key_value("smtp")
-		email.to("steeve.mccauley@gmail.com", "Steeve McCauley")
-		email.to("steeve@oneguycoding.com", "One Guy Coding")
-		email.from("rubac@linguini.home", "Rubac Backup User")
-		subject = "Rubac Test"
-		body = "This is a test email\nThis is the second line\nThis is the last line\n"
+		#puts "##### Email test"
+		#email = Email.new
+		#email.server = @config.get_global_key_value("smtp")
+		#email.to("steeve.mccauley@gmail.com", "Steeve McCauley")
+		#email.to("steeve@oneguycoding.com", "One Guy Coding")
+		#email.from("rubac@linguini.home", "Rubac Backup User")
+		#subject = "Rubac Test"
+		#body = "This is a test email\nThis is the second line\nThis is the last line\n"
 		#email.send(subject, body, @config.get_global_key_value("smtp", nil))
 
 		#$o.debug("this is a debug message")
@@ -1402,20 +1397,10 @@ class Rubac
 
 	def history_command
 		hist = []
-		host = @client
 		puts "##### history command #####"
 		# look in /bdest/profile/client/rubac.date,.../rubac.log.yaml
-		if host == "all"
-			clients = @config.get_clients
-			clients.each_key do |cli|
-				@client = cli
-				hist = history_command_get_history(cli)
-				history_command_display(cli, hist)
-			end
-		else
-			hist = history_command_get_history(host)
-			history_command_display(host, hist)
-		end
+		hist = history_command_get_history(@client)
+		history_command_display(@client, hist)
 	end
 
 	def version_command
