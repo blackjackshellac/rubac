@@ -1139,16 +1139,16 @@ class Rubac
 
 			if line[/^#{inc[1..-1]}/]
 				line = "/" + line
-				puts ">#{line}" if $debug
+				puts "//:#{line}://" if $debug
+			end
+
+			if line[/\sis uptodate$/]
+				line.sub!(/\sis uptodate$/, "")
+				puts "uu:#{line}:uu" #if $debug
 			end
 
 			if line[/^#{inc}.*/]
 				puts "ii#{line}ii" if $debug
-				log << line
-			elsif line[/\sis uptodate$/]
-				line.sub!(/\sis uptodate$/, "")
-				line = "/" + line
-				puts "uu:#{line}:uu" if $debug
 				log << line
 			elsif line[/^\s*deleting\s+/]
 			# if deleting, remove the file from 'log', if it exists
