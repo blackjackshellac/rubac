@@ -1062,8 +1062,6 @@ class Rubac
 				link_dest = true
 			end
 		end
-
-
 	end
 
 	def run_command_fill(droot, path, log)
@@ -1198,6 +1196,11 @@ class Rubac
 
 	# backup to bdir with hardlink to ldir, if it exists
 	def run_command
+
+		Signal.trap("TERM", "trapSigTerm")
+		Signal.trap("INT", "trapSigInt")
+		Signal.trap("HUP", "trapSigHup")
+
 		host = @client
 
 		if @dest.length == 0
@@ -1279,6 +1282,12 @@ class Rubac
 
 		runlock.flock(File::LOCK_UN)
 		File.delete(rlock)
+
+		Signal.trap("TERM", "DEFAULT")
+		Signal.trap("INT", "DEFAULT")
+		Signal.trap("HUP", "DEFAULT")
+
+		exit(1) if $signal_exit == true
 	end
 
 	#
@@ -1440,9 +1449,9 @@ class Rubac
 			eval @options.cmd
 		when "run_command", "snapshot_command", "list_command", "history_command"
 			@options.client.each do |client|
-				puts ">>>>> Running #{@options.cmd} for #{client}"
+				puts ">>>>> Running #{@options.cmd} for #{client}" if $debug
 				process_command_client(client)
-				puts "<<<<< Done running #{@options.cmd} for #{client}"
+				puts "<<<<< Done running #{@options.cmd} for #{client}" if $debug
 			end
 		else
 			puts "huh? #{Config::CONFIG['host_os']}"
@@ -1462,6 +1471,23 @@ class Rubac
 end
 
 $o = Msg.new("console,syslog,fart")
+
+$signal_exit = false
+
+def trapSigTerm
+	puts "Ignoring TERM signal"
+	$signal_exit = true
+end
+
+def trapSigInt
+	puts "Ignoring INT signal"
+	$signal_exit = true
+end
+
+def trapSigHup
+	puts "Ignoring HUP signal"
+	$signal_exit = true
+end
 
 rubac = Rubac.new(ARGV, STDIN)
 rubac.main
