@@ -1144,17 +1144,16 @@ class Rubac
 
 			if line[/\sis uptodate$/]
 				line.sub!(/\sis uptodate$/, "")
-				puts "uu:#{line}:uu" #if $debug
-			end
-
-			if line[/^#{inc}.*/]
-				puts "ii#{line}ii" if $debug
+				puts "uu:#{line}:uu" if $debug
+				log << line
+			elsif line[/^#{inc}.*/]
+				puts "ii:#{line}:ii" #if $debug
 				log << line
 			elsif line[/^\s*deleting\s+/]
 			# if deleting, remove the file from 'log', if it exists
 			# ^deleting home/rico/.thumbnails/normal/6bf9e300a41296740a5fdd89b98e1d93.png
 				line.sub!(/^\s*deleting\s+/, "/")
-				puts "xx#{line}xx" if $debug
+				puts "dd:#{line}:dd" if $debug
 				log.delete(line)
 			else
 				puts "$ #{line}"
@@ -1172,8 +1171,8 @@ class Rubac
 			exit(status)
 		end
 
-		bdir = File.join(bdest, inc)
-		run_command_fill(bdest, bdir, log) if fill
+		#bdir = File.join(bdest, inc)
+		#run_command_fill(bdest, bdir, log) if fill
 
 		# remove duplicates
 		log.uniq!
