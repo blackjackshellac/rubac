@@ -734,6 +734,7 @@ class Rubac
 		@options.smtp = nil
 		@options.hist_index = nil
 		@options.address = nil
+		@options.search = nil
 
 		@options.tmp = ENV['TMP'].to_s
 		if @options.tmp.length > 0
@@ -939,6 +940,11 @@ class Rubac
 		opts.on('-H', '--history [INDEX]', "Backup history") do |index|
 			set_command("history")
 			@options.hist_index = index.to_i if index != nil
+		end
+
+		opts.on('-S', '--search glob', "Search backup history") do |glob|
+			set_command("search")
+			@options.search = glob
 		end
 
 		opts.on('-v', '--version', "Print version") do
@@ -1417,6 +1423,49 @@ class Rubac
 		history_command_display(@client, hist)
 	end
 
+	def search_command_pp(label, value, fmt="%s")
+		printf("%8s=#{fmt}\n", label, value)
+	end
+
+	def search_command
+		puts "##### search command #####"
+		hist = []
+		hist = history_command_get_history(@client)
+		
+		hist.each_index do |i|
+			puts "Search #{hist[i]} for #{@options.search}"
+			basedir= File.join(@dest, @options.profile, @client, hist[i])
+			logf = File.join(basedir, "rubac.log.yaml")
+			if File.exist?(logf)
+				log = File.open(logf) { |yf| YAML::load(yf) }
+				log.each do |line|
+					next if not line[/#{@options.search}/]
+					fpath = File.join(basedir, line)
+					puts fpath
+					next if not @options.verbose
+					if File.exist?(fpath)
+						fstat = File.lstat(fpath)
+						search_command_pp("type", fstat.ftype)
+						if fstat.file?
+							search_command_pp("md5sum", Digest::MD5.file(fpath).hexdigest)
+						end
+						search_command_pp("size", fstat.size)
+						search_command_pp("atime", fstat.atime)
+						search_command_pp("mtime", fstat.mtime)
+						search_command_pp("ctime", fstat.ctime)
+						search_command_pp("uid:gid", "#{fstat.uid}:#{fstat.gid}")
+						search_command_pp("perm", fstat.mode)
+					else
+						puts "Error: not found #{fpath}"
+					end
+				end
+			else
+				puts "Error: opening #{logf}"
+			end
+
+		end
+	end
+
 	def version_command
 		ver = @config.version
 		puts "#{File.basename(__FILE__)} " + ver
@@ -1446,7 +1495,7 @@ class Rubac
 			# already done above
 		when "help_command", "usage_command"
 			eval @options.cmd
-		when "run_command", "snapshot_command", "list_command", "history_command"
+		when "run_command", "snapshot_command", "list_command", "history_command", "search_command"
 			@options.client.each do |client|
 				puts ">>>>> Running #{@options.cmd} for #{client}" if $debug
 				process_command_client(client)
