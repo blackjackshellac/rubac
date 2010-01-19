@@ -1432,37 +1432,47 @@ class Rubac
 		hist = []
 		hist = history_command_get_history(@client)
 		
+		inodes = {}
+
 		hist.each_index do |i|
-			puts "Search #{hist[i]} for #{@options.search}"
+			puts "Searching #{hist[i]} for #{@options.search}"
 			basedir= File.join(@dest, @options.profile, @client, hist[i])
 			logf = File.join(basedir, "rubac.log.yaml")
-			if File.exist?(logf)
-				log = File.open(logf) { |yf| YAML::load(yf) }
-				log.each do |line|
-					next if not line[/#{@options.search}/]
-					fpath = File.join(basedir, line)
-					puts fpath
-					next if not @options.verbose
-					if File.exist?(fpath)
-						fstat = File.lstat(fpath)
-						search_command_pp("type", fstat.ftype)
-						if fstat.file?
-							search_command_pp("md5sum", Digest::MD5.file(fpath).hexdigest)
-						end
-						search_command_pp("size", fstat.size)
-						search_command_pp("atime", fstat.atime)
-						search_command_pp("mtime", fstat.mtime)
-						search_command_pp("ctime", fstat.ctime)
-						search_command_pp("uid:gid", "#{fstat.uid}:#{fstat.gid}")
-						search_command_pp("perm", fstat.mode)
-					else
-						puts "Error: not found #{fpath}"
-					end
-				end
-			else
+			if not File.exist?(logf)
 				puts "Error: opening #{logf}"
+				next
 			end
 
+			log = File.open(logf) { |yf| YAML::load(yf) }
+			log.each do |line|
+				next if not line[/#{@options.search}/]
+				fpath = File.join(basedir, line)
+
+				if not File.exist?(fpath)
+					puts "Error: not found #{fpath}"
+					next
+				end
+
+				fstat = File.lstat(fpath)
+				# record found file inodes to eliminate duplicates
+				next if inodes.has_key?(fstat.ino)
+				inodes[fstat.ino] = fstat.nlink
+
+				puts fpath
+				next if not @options.verbose
+
+				search_command_pp("type", fstat.ftype)
+				if fstat.file?
+					search_command_pp("md5sum", Digest::MD5.file(fpath).hexdigest)
+				end
+				search_command_pp("size", fstat.size)
+				search_command_pp("atime", fstat.atime)
+				search_command_pp("mtime", fstat.mtime)
+				search_command_pp("ctime", fstat.ctime)
+				search_command_pp("uid:gid", "#{fstat.uid}:#{fstat.gid}")
+				search_command_pp("perm", fstat.mode, "%o")
+				search_command_pp("ino", fstat.ino)
+			end
 		end
 	end
 
