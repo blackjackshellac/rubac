@@ -583,15 +583,7 @@ class Config_rubac
 	end
 
 	def get_client_includes(host)
-		includes = get_client_key_list(host, 'includes').split(",")
-		addr = get_client_address(host)
-		puts "addr=#{addr}"
-		if addr != "localhost" and addr != "127.0.0.1"
-			includes.each_index do |i|
-				includes[i] = "#{host}:" + includes[i]
-			end
-		end
-		includes.join(",")
+		get_client_key_list(host, 'includes')
 	end
 
 	def get_client_excludes(host)
@@ -1099,8 +1091,8 @@ class Rubac
 			log = Array.new
 		end
 
-		cmd =  %Q(rsync #{@sshopts} #{@useropts})
-		cmd << %Q( --link-dest=#{ldest}) if ldest
+		cmd =  "rsync #{@sshopts} #{@useropts}"
+		cmd << " --link-dest=#{ldest}" if ldest
 		# write the excludes to a file and use --exclude-from 
 		if @excludes.length > 0
 			excl = File.join(@options.tmp, File.basename(bdest) + ".excl")
@@ -1109,36 +1101,26 @@ class Rubac
 				exclf.puts( x )
 			end
 			exclf.close
-			cmd << %Q( --exclude-from="#{excl}") if @excludes.length > 0
+			cmd << " --exclude-from=\"#{excl}\"" if @excludes.length > 0
 		end
-		cmd << %Q( #{inc} #{bdest})
-		puts %Q(#{cmd})
+#		addr = get_client_address(host)
+#		puts "addr=#{addr}"
+#		if addr != "localhost" and addr != "127.0.0.1"
+#			includes.each_index do |i|
+#				includes[i] = "#{host}:" + includes[i]
+#			end
+#		end
+
+		if @address != "localhost" and @address != "127.0.0.1"
+			cmd << " #{@address}:#{inc}"
+		else
+			cmd << " #{inc}"
+		end
+		cmd << " #{bdest}"
+		puts cmd
 		#Open3.popen3(cmd) { |stdin,stdout,stderr|
-		#	line = stdout.read
-		#	line.chop!
-		#	puts "DD:#{line}:DD"
-		#	# if deleting, remove the file from 'log', if it exists
-		#	# ^deleting home/rico/.thumbnails/normal/6bf9e300a41296740a5fdd89b98e1d93.png
-		#	if line[/^#{inc}.*/]
-		#		puts "ii#{line}ii"
-		#		log << line
-		#	elsif line[/.*\sis uptodate$/]
-		#		line.sub!(/\s is uptodate/, "")
-		#		line = "/" + line
-		#		puts "uu#{line}uu"
-		#	elsif line[/^\s*deleting\s+/]
-		#		line.sub!(/^\s*deleting\s+/, "/")
-		#		puts "xx#{line}xx"
-		#		log.delete(line)
-		#	else
-		#		puts "::#{line}::"
-		#	end
-		#
-		#	line = stderr.read
-		#	line.chop!
-		#	puts "ERROR: #{line}" if line.length > 0
-		#
 		#}
+
 		p = IO.popen(cmd)
 		while (line = p.gets)
 			line.chop!
