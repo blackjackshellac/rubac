@@ -1001,6 +1001,10 @@ class Rubac
 		@xml = @config.save_xml
 	end
     
+	def print_command(suffix="")
+		puts "##### #{@options.cmd} for #{@client} #{suffix} #####"
+	end
+
 	def help_command 
 		# RDoc::usage doesn't work in 1.9.x
 		RDoc::usage('Synopsis', 'Usage', 'Options') #exits app
@@ -1184,6 +1188,8 @@ class Rubac
 	# backup to bdir with hardlink to ldir, if it exists
 	def run_command
 
+		print_command
+
 		Signal.trap("TERM", "trapSigTerm")
 		Signal.trap("INT", "trapSigInt")
 		Signal.trap("HUP", "trapSigHup")
@@ -1282,7 +1288,7 @@ class Rubac
 	# backing up to the snapshot and linking to rubac.0
 	#
 	def snapshot_command
-		puts "##### Snapshot=#{@options.snapshot} #####"
+		print_command(@options.snapshot)
 		run_command
 	end
 
@@ -1335,6 +1341,8 @@ class Rubac
 
 	def list_command
 
+		print_command
+
 		if @options.verbose
 			puts "##### Configuration #####"
 			puts "#{@xml}\n"
@@ -1363,6 +1371,8 @@ class Rubac
 
 	def history_command_display(cli, hist)
 		return if hist.nitems == 0
+
+		print_command
 
 		if @options.hist_index != nil
 			puts "#{cli}:#{@options.hist_index}: #{hist[0]}"
@@ -1399,7 +1409,6 @@ class Rubac
 
 	def history_command
 		hist = []
-		puts "##### history command #####"
 		# look in /bdest/profile/client/rubac.date,.../rubac.log.yaml
 		hist = history_command_get_history(@client)
 		history_command_display(@client, hist)
@@ -1410,9 +1419,11 @@ class Rubac
 	end
 
 	def search_command
-		puts "##### search command #####"
+		print_command
 		hist = []
 		hist = history_command_get_history(@client)
+
+		return if hist.nitems == 0
 		
 		inodes = {}
 
