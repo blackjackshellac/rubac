@@ -1341,8 +1341,6 @@ class Rubac
 
 	def list_command
 
-		print_command
-
 		if @options.verbose
 			puts "##### Configuration #####"
 			puts "#{@xml}\n"
@@ -1428,7 +1426,10 @@ class Rubac
 		inodes = {}
 
 		hist.each_index do |i|
-			puts "Searching #{hist[i]} for #{@options.search}"
+
+			pbasedir = false
+
+			puts "Searching #{hist[i]} for /#{@options.search}/"
 			basedir= File.join(@dest, @options.profile, @client, hist[i])
 			logf = File.join(basedir, "rubac.log.yaml")
 			if not File.exist?(logf)
@@ -1451,7 +1452,12 @@ class Rubac
 				next if inodes.has_key?(fstat.ino)
 				inodes[fstat.ino] = fstat.nlink
 
-				puts fpath
+				if pbasedir == false
+					puts "basedir=#{basedir}"
+					pbasedir = true
+				end
+
+				puts "\t#{fstat.ftype}=#{line}"
 				next if not @options.verbose
 
 				search_command_pp("type", fstat.ftype)
