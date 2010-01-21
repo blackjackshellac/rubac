@@ -24,8 +24,8 @@
 #   -m, --mail=EMAIL        TODO Notification email, comma separated list
 #       --smtp=SERVER       TODO IP Address of smtp server (default is localhost)
 #
-#   -L, --logdir=PATH       TODO Directory for logging (root default is /var/log/rubac, otherwise TMP)
-#       --log[=NAME]        TODO Name of log file, (default is %profile%.%run_date%.log)
+#   -L, --logdir=PATH       Directory for logging (root default is /var/log/rubac, otherwise TMP/rubac)
+#       --log[=NAME]        Name of log file, (default is profile.%Y-%m-%d.log)
 #   -y, --syslog            TODO Use syslog for logging [??]
 #
 #   -l, --list              List the includes, excludes, etc., for the named profile
@@ -216,10 +216,11 @@ class Msg
 
 		@loglevel = @LOGLEVELS["info"]
 
-		@console = true
-		@syslog = false
-		@privlog = true
-		@notify = false
+		@console = $stdout
+		@syslog = nil 
+		@privlog = nil
+		@notify = nil
+		@datefmt = "%b %d %H:%M:%S"
 
 		return if dest == nil
 
@@ -229,7 +230,8 @@ class Msg
 			puts "Setting dest=#{d}" if @debug
 			case d
 			when 'console'
-				@console = true
+				@console = $stdout
+				@console.sync = true
 			when 'syslog'
 				@syslog = true
 			else
@@ -239,17 +241,52 @@ class Msg
 		# default log level
 	end
 private
+	def now
+		Time.now.strftime(@datefmt) + " "
+	end
+
 	def MLmessage(msg, lvl)
 		# console
 		# syslog
 		# private log
 		# notification
-		puts "shit" if not @LOGLEVELS.has_key?(lvl)
+		puts "Unknown message level=%{lvl}" if not @LOGLEVELS.has_key?(lvl)
 		return if @LOGLEVELS[lvl].to_i > @loglevel
-		puts msg if @console
+		msg.each do |line|
+			line << "\n"
+			@console << line if @console
+			# only print blank lines to console
+			next if line.length == 1
+			line = now + line
+			@privlog << line if @privlog
+		end
 		#msg_buffer << msg if @notify
 	end
 public
+	# Jan 17 09:08:33 host 
+	# %b %d %H:%M:%S hostname
+	def privlog(name, dir, perm=0644)
+		@logname = name
+		@logdir = dir
+
+		if not File.exist?(dir)
+			begin
+				FileUtils.mkdir(dir)
+			rescue Errno::EACCES
+				die "permission denied creating log dir #{dir}"
+			rescue
+				die "creating log dir #{dir}"
+			end
+		end
+		if not File.stat(dir).directory?
+			die "#{dir} is not a directory"
+		end
+
+		log = File.join(@logdir, @logname)
+		privlog = File.new(log, File::CREAT|File::APPEND|File::RDWR, perm)
+		@privlog = privlog if privlog
+	end
+
 	def level(lvl)
 		if @LOGLEVELS[lvl].has_key?
 			@loglevel = @LOGLEVELS[lvl]
@@ -282,6 +319,14 @@ public
 	def die(msg, e=1)
 		err(msg)
 		exit e
+	end
+
+	def printf(fmt, *args)
+		$stdout << sprintf(fmt, *args)
+	end
+
+	def puts(msg)
+		$stdout << msg + "\n"
 	end
 end
  
@@ -346,11 +391,11 @@ class Config_rubac
 		if File.exist?(@xml_file)
 			@config = XmlSimple.xml_in(@xml_file, 'ForceArray' => false)
 		else
-			puts "Config #{@xml_file} not found, using default"
+			$msg.warn "Config #{@xml_file} not found, using default"
 			@config = @def_config.to_hash
 		end
-		puts "##### load_xml #{@xml_file}" if @debug
-		puts "YAML.dump=" + YAML.dump(@config) + "\n" if $debug
+		$msg.debug "##### load_xml #{@xml_file}"
+		$msg.debug "YAML.dump=" + YAML.dump(@config) + "\n"
 
 		align_version
 	end
@@ -456,13 +501,8 @@ class Config_rubac
 	end
 
 	def set_global_key_value(key, value)
+		return if value == nil
 		@config['globals']["#{key}"] = value
-	end
-
-	# set the specified path to the global backup destination
-	def set_global_dest(dest)
-		return if dest == nil or dest.length == 0
-		@config['globals']['dest'] = dest
 	end
 
 	def get_global_dest
@@ -483,13 +523,13 @@ class Config_rubac
 	def set_client_incremental(host, n, name)
 		get_client_config(host)
 		@config['clients']["#{host}"]['incrementals']["#{n}"] = name
-		puts "set incr[#{n}]=#{name}"
+		$msg.debug "set ['clients'][#{host}]['incrementals'][#{n}]=#{name}"
 	end
 
 	def get_client_incrementals(host, n)
 		get_client_config(host)
 		if not @config['clients']["#{host}"].has_key?('incrementals')
-			puts "DEBUG: incrementals not found for host=#{host}"
+			$msg.debug "incrementals not found for host=#{host}"
 			@config['clients']["#{host}"]['incrementals'] = { "#{n}" => "" }
 		end
 		if not @config['clients']["#{host}"]['incrementals'].has_key?("#{n}")
@@ -656,7 +696,7 @@ class Rubac
 		@options.ninc = nil	# means 5 incrementals, 1-5 with main backup 0
 		
 		if ENV['RUBAC_PROFILE'] and ENV['RUBAC_PROFILE'].length > 0
-			@options.profile = ENV['RUBAC_PROFILE']
+			@options.profile = File.basename(ENV['RUBAC_PROFILE'], ".xml")
 		else
 			@options.profile = "rubac"
 		end
@@ -706,8 +746,7 @@ class Rubac
 		begin
 			FileUtils.mkdir(@options.datadir) if not File.exist?(@options.datadir)
 		rescue
-			puts "Failed to create data directory #{@options.datadir}"
-			exit false
+			$msg.die "Failed to create data directory #{@options.datadir}"
 		end
 
 		@options.verbose = false
@@ -735,14 +774,10 @@ class Rubac
 			@options.tmp = Dir.tmpdir
 		end
 
-		if Process.uid == 0
-			@options.logdir = "/var/log/rubac"
-		else
-			@options.logdir = "#{@options.tmp}/rubac"
-		end
-
-		# use default log
-		@options.log = nil
+		# use default log (constructed after processing arguments)
+		@options.logdir = nil
+		@options.logname = nil
+		@options.logfmt = "%Y-%m-%d"
 
 		#
 		# TODO - add additional defaults end
@@ -754,20 +789,17 @@ class Rubac
 		# rsync version must be at least 2.5.6 for --link-dest option
 		rsync_version = `#{@rsync} --version`
 		if $?.exitstatus != 0
-			puts "Error: running #{@rsync} --version"
-			exit(1)
+			$msg.die "running #{@rsync} --version"
 		end
 		rsync_version = rsync_version[/^rsync\s+version\W+\d+\.\d+\.\d+/]
 		if rsync_version == nil
-			puts "Error: could not determine rsync version"
-			exit(1)
+			$msg.die "could not determine rsync version"
 		end
 		rsync_version = rsync_version[/\d+\.\d+\.\d/]
 		rva = rsync_version.split(/\./)
 		rvi = rva[0].to_i * 100 + rva[1].to_i * 10 + rva[2].to_i
 		if rvi < 256
-			puts "rsync version is too old, require at least rsync version 2.5.6"
-			exit(1)
+			$msg.die "rsync version is too old, require at least rsync version 2.5.6"
 		end
 	end
 
@@ -778,14 +810,18 @@ class Rubac
 
 		if arguments_valid? && parsed_options?
 
-			puts "Start at #{DateTime.now}\n\n" if @options.verbose
+			t0 = Time.now
+			$msg.info "Start at #{t0.to_s}" if @options.verbose
 
 			output_options if @options.verbose # [Optional]
 
 			process_arguments            
 			process_command
 
-			#puts "\nFinished at #{DateTime.now}" if @options.verbose
+			t1 = Time.now
+			$msg.info "Finished at #{t1.to_s}" if @options.verbose
+			t1 = t1-t0
+			$msg.info "Runtime #{t1.to_f}"
 		else
 			usage_command
 		end
@@ -797,7 +833,7 @@ class Rubac
 		if @options.cmd == nil
 			@options.cmd="#{c}_command"
 		else
-			puts "Warning: Command is already set to #{@options.cmd}, ignoring #{c} command"
+			$msg.warn "Command is already set to #{@options.cmd}, ignoring #{c} command"
 		end
 	end
 
@@ -815,27 +851,11 @@ class Rubac
 		}
 
 		opts.on('-LPATH', '--logdir PATH', "Set the log directory") do |dir|
-			if not File.exist?(dir)
-				begin
-					FileUtils.mkdir(dir)
-				rescue Errno::EACCES
-					puts "Error: permission denied creating log dir #{dir}"
-					exit 1
-				rescue
-					puts "Error: creating log dir #{dir}"
-					exit 1
-				end
-			end
-			if File.stat(dir).directory?
-				@options.logdir = dir
-			else
-				puts "Error: #{dir} is not a directory"
-				exit 1
-			end
+			@options.logdir = dir
 		end
 		
 		opts.on('--log PATH', "Set the log file name") do |name|
-			@options.log = name
+			@options.log = File.basename(name)
 		end
 
 		opts.on('-cHOST', '--client HOST', "Backup Client hostname") do |host|
@@ -896,15 +916,14 @@ class Rubac
 		opts.on('-IN', '--incremental N', "Set the number of incremental backups") do |ninc|
 			ninc = ninc.to_i
 			if ninc < 0
-				puts "Error: number of incrementals must be greater than or equal to 0"
-				puts "       ignoring #{ninc}"
+				$msg.err "number of incrementals must be greater than or equal to 0, ignoring #{ninc}"
 			else
 				@options.ninc = ninc
 			end
 		end
 
 		opts.on('-pNAME', '--profile NAME', "Apply opts to specified profile") do |profile|
-			@options.profile = profile
+			@options.profile = File.basename(profile, ".xml")
 		end
 		# TO DO - add additional options
 
@@ -956,10 +975,10 @@ class Rubac
 	end
 
 	def output_options
-		puts "Options:\n"
+		$msg.info "Options:\n"
       
 		@options.marshal_dump.each do |name, val|        
-			puts "  #{name} = #{val}"
+			$msg.info "  #{name} = #{val}"
 		end
 	end
 
@@ -976,8 +995,9 @@ class Rubac
 		@config = Config_rubac.new
 		@config.load_xml(@options.dbname, @options.datadir)
 
-		@config.set_global_dest(@options.dest) if @options.dest
-
+		@config.set_global_key_value("dest", @options.dest) if @options.dest
+		@config.set_global_key_value("logname", @options.logname) if @options.logname
+		@config.set_global_key_value("logdir", @options.logdir) if @options.logdir
 		@config.set_global_key_value("smtp", @options.smtp) if @options.smtp
 
 		if @options.client.nitems == 0
@@ -1002,7 +1022,7 @@ class Rubac
 	end
     
 	def print_command(suffix="")
-		puts "##### #{@options.cmd} for #{@client} #{suffix} #####"
+		$msg.puts "##### #{@options.cmd} for #{@client} #{suffix} #####"
 	end
 
 	def help_command 
@@ -1035,7 +1055,7 @@ class Rubac
 			nname = @config.get_client_incrementals(host, n)
 			mname = @config.get_client_incrementals(host, m)
 
-			puts "n=#{n} nname=#{nname} m=#{m} mname=#{mname}"
+			$msg.debug "n=#{n} nname=#{nname} m=#{m} mname=#{mname}"
 
 			next if nname.length == 0
 
@@ -1048,7 +1068,7 @@ class Rubac
 			# Someone has deleted an incremental backup
 			if not File.exist?(ndest)
 				#@config.set_client_incremental(host, m, nname)
-				puts "Error: incremental backup #{nname} not found"
+				$msg.err "incremental backup #{nname} not found"
 				@config.set_client_incremental(host, m, "")
 				@config.set_client_incremental(host, n, "")
 				next
@@ -1089,7 +1109,7 @@ class Rubac
 		if File.exist?(logf)
 			fill = false
 			log = File.open(logf) { |yf| YAML::load(yf) }
-			puts "Log found: loaded #{logf} with #{log.nitems}"
+			$msg.info "Log found: loaded #{logf} with #{log.nitems}"
 		else
 			fill = true
 			log = Array.new
@@ -1108,7 +1128,7 @@ class Rubac
 			cmd << " --exclude-from=\"#{excl}\"" if @excludes.length > 0
 		end
 #		addr = get_client_address(host)
-#		puts "addr=#{addr}"
+#		$msg.info "addr=#{addr}"
 #		if addr != "localhost" and addr != "127.0.0.1"
 #			includes.each_index do |i|
 #				includes[i] = "#{host}:" + includes[i]
@@ -1121,7 +1141,7 @@ class Rubac
 			cmd << " #{inc}"
 		end
 		cmd << " #{bdest}"
-		puts cmd
+		$msg.info cmd
 		#Open3.popen3(cmd) { |stdin,stdout,stderr|
 		#}
 
@@ -1131,24 +1151,24 @@ class Rubac
 
 			if line[/^#{inc[1..-1]}/]
 				line = "/" + line
-				puts "//:#{line}://" if $debug
+				$msg.debug "//:#{line}://"
 			end
 
 			if line[/\sis uptodate$/]
 				line.sub!(/\sis uptodate$/, "")
-				puts "uu:#{line}:uu" if $debug
+				$msg.debug "uu:#{line}:uu"
 				log << line
 			elsif line[/^#{inc}.*/]
-				puts "ii:#{line}:ii" #if $debug
+				$msg.debug "ii:#{line}:ii"
 				log << line
 			elsif line[/^\s*deleting\s+/]
 			# if deleting, remove the file from 'log', if it exists
 			# ^deleting home/rico/.thumbnails/normal/6bf9e300a41296740a5fdd89b98e1d93.png
 				line.sub!(/^\s*deleting\s+/, "/")
-				puts "dd:#{line}:dd" if $debug
+				$msg.debug "dd:#{line}:dd"
 				log.delete(line)
 			else
-				puts "$ #{line}"
+				$msg.info "$ #{line}"
 			end
 		end
 		
@@ -1157,9 +1177,9 @@ class Rubac
 		p status
 		#out = %x{#{cmd}}
 		#status = $?.exitstatus
-		#puts out
+		#$msg.info out
 		if status and status != 0
-			puts "Error: running command %Q(#{cmd})"
+			$msg.err "running command %Q(#{cmd})"
 			exit(status)
 		end
 
@@ -1169,20 +1189,22 @@ class Rubac
 		# remove duplicates
 		log.uniq!
 
-		puts "Backup log length=#{log.nitems} to #{logf}"
+		$msg.info "Backup log length=#{log.nitems} to #{logf}"
 		File.open( logf, "w" ) do |out|
 			YAML.dump( log, out )
 		end
 
 	#	log.each do |entry|
-	#		puts entry
+	#		$msg.info entry
 	#	end
 	end
 
+	def date_time_str(fmt="%Y-%m-%d_%H-%M-%S")
+		Time.now.strftime(fmt)
+	end
+
 	def get_backup_dirname
-		t = Time.now
-		t.strftime("%Y-%m-%d_%H-%M-%S")
-		"rubac." + t.strftime("%Y-%m-%d_%H-%M-%S")
+		"rubac." + date_time_str("%Y-%m-%d_%H-%M-%S")
 	end
 
 	# backup to bdir with hardlink to ldir, if it exists
@@ -1197,7 +1219,7 @@ class Rubac
 		host = @client
 
 		if @dest.length == 0
-			puts "Error: backup destination not set"
+			$msg.err "backup destination not set"
 			exit(1)
 		end
 
@@ -1225,7 +1247,7 @@ class Rubac
 		rlock = File.join(pdest, "rubac.runlock")
 		runlock = File.new(rlock, File::CREAT|File::RDONLY, 0644)
 		if runlock.flock(File::LOCK_EX|File::LOCK_NB) == false
-			puts "Error: cannot lock file #{rlock}"
+			$msg.err "cannot lock file #{rlock}"
 			runlock.close
 			return
 		end
@@ -1235,11 +1257,11 @@ class Rubac
 
 		if @options.snapshot
 			if not File.exist?(ldest)
-				puts "Error: run one backup before doing a snapshot"
+				$msg.err "run one backup before doing a snapshot"
 				exit (1)
 			end
 		elsif @options.update
-			puts "Running full backup on #{bdest}"
+			$msg.info "Running update on #{bdest}"
 			ldest = nil
 		else
 			# move out incrementals
@@ -1303,20 +1325,20 @@ class Rubac
 		return if inc.length == 0
 
 		inc = inc.split("#{delim}")
-		printf "%10s=", key
+		$msg.printf "%10s=", key
 
 		if inc.nitems > 1
 		inc.each do |i|
-			printf "\n\t%-12s", i
+			$msg.printf "\n\t%-12s", i
 		end
 		else
-			printf "%s", inc[0]
+			$msg.printf "%s", inc[0]
 		end
-		puts ""
+		$msg.printf "\n"
 	end
 
 	def list_command_client(client)
-		puts "##### #{client} #####"
+		$msg.printf "##### #{client} #####\n"
 		list_command_client_key(client, 'includes')
 		list_command_client_key(client, 'excludes')
 		list_command_client_key(client, 'opts', " ")
@@ -1327,23 +1349,23 @@ class Rubac
 		return if @global_settings
 		@global_settings = true
 
-		puts "##### Global settings #####"
-		printf "%10s=%s\n", "profile", @options.profile
+		$msg.printf "##### Global settings #####"
+		$msg.printf "%10s=%s\n", "profile", @options.profile
 		if @dest.length == 0
-			puts %Q(   *** Warning: backup destination not set)
+			$msg.warn "backup destination not set"
 		else
-			printf %Q(%10s=%s\n), "dest", @dest
+			$msg.printf %Q(%10s=%s\n), "dest", @dest
 		end
-		printf %Q(%10s=%s\n), "ssh opts", @sshopts
-		printf %Q(\n)
+		$msg.printf %Q(%10s=%s\n), "ssh opts", @sshopts
+		$msg.printf %Q(\n)
 		@global_settings = true
 	end
 
 	def list_command
 
 		if @options.verbose
-			puts "##### Configuration #####"
-			puts "#{@xml}\n"
+			$msg.info "##### Configuration #####"
+			$msg.info "#{@xml}\n"
 		end
 
 		list_command_global_settings
@@ -1360,11 +1382,11 @@ class Rubac
 		#body = "This is a test email\nThis is the second line\nThis is the last line\n"
 		#email.send(subject, body, @config.get_global_key_value("smtp", nil))
 
-		#$o.debug("this is a debug message")
-		#$o.info("this is an info message")
-		#$o.warn("this is a warning message")
-		#$o.err("this is a warning message")
-		#$o.die("this is a die message")
+		#$msg.debug("this is a debug message")
+		#$msg.info("this is an info message")
+		#$msg.warn("this is a warning message")
+		#$msg.err("this is a warning message")
+		#$msg.die("this is a die message")
 	end
 
 	def history_command_display(cli, hist)
@@ -1373,21 +1395,22 @@ class Rubac
 		print_command
 
 		if @options.hist_index != nil
-			puts "#{cli}:#{@options.hist_index}: #{hist[0]}"
+			$msg.printf "%s\n", "#{cli}:#{@options.hist_index}: #{hist[0]}"
 			logf = File.join(@dest, @options.profile, @client, hist[0], "rubac.log.yaml")
-			if File.exist?(logf)
-				log = File.open(logf) { |yf| YAML::load(yf) }
-				log.each do |line|
-					puts line
-				end
-			else
-				puts "Error: opening #{logf}"
+			if not File.exist?(logf)
+				$msg.err "opening #{logf}"
+				return
+			end
+
+			log = File.open(logf) { |yf| YAML::load(yf) }
+			log.each do |line|
+				$msg.printf "%s\n", line
 			end
 			return
 		end
 
 		hist.each_index do |i|
-			puts "#{cli}:#{i}: #{hist[i]}"
+			$msg.printf "%s\n", "#{cli}:#{i}: #{hist[i]}"
 		end
 	end
 
@@ -1413,7 +1436,7 @@ class Rubac
 	end
 
 	def search_command_pp(label, value, fmt="%s")
-		printf("%8s=#{fmt}\n", label, value)
+		$msg.printf("%8s=#{fmt}\n", label, value)
 	end
 
 	def search_command
@@ -1429,11 +1452,11 @@ class Rubac
 
 			pbasedir = false
 
-			puts "Searching #{hist[i]} for /#{@options.search}/"
+			$msg.puts "Searching #{hist[i]} for /#{@options.search}/"
 			basedir= File.join(@dest, @options.profile, @client, hist[i])
 			logf = File.join(basedir, "rubac.log.yaml")
 			if not File.exist?(logf)
-				puts "Error: opening #{logf}"
+				$msg.err "opening #{logf}"
 				next
 			end
 
@@ -1443,7 +1466,7 @@ class Rubac
 				fpath = File.join(basedir, line)
 
 				if not File.exist?(fpath)
-					puts "Error: not found #{fpath}"
+					$msg.err "backup log not found #{fpath}"
 					next
 				end
 
@@ -1453,11 +1476,11 @@ class Rubac
 				inodes[fstat.ino] = fstat.nlink
 
 				if pbasedir == false
-					puts "basedir=#{basedir}"
+					$msg.puts "basedir=#{basedir}"
 					pbasedir = true
 				end
 
-				puts "\t#{fstat.ftype}=#{line}"
+				$msg.puts "\t#{fstat.ftype}=#{line}"
 				next if not @options.verbose
 
 				search_command_pp("type", fstat.ftype)
@@ -1477,7 +1500,7 @@ class Rubac
 
 	def version_command
 		ver = @config.version
-		puts "#{File.basename(__FILE__)} " + ver
+		$msg.puts "#{File.basename(__FILE__)} " + ver
 	end
     
 	def process_command_client(client)
@@ -1493,7 +1516,28 @@ class Rubac
 	def process_command
 		@dest = @config.get_global_dest
 
-		puts "Warning: backup destination not set" if not File.exist?(@dest)
+		if @options.logdir == nil
+			@options.logdir = @config.get_global_key_value("logdir")
+			if @options.logdir.length == 0
+				if Process.uid == 0
+					@options.logdir = "/var/log/rubac"
+				else
+					@options.logdir = "#{@options.tmp}/rubac"
+				end
+			end
+		end
+
+		if @options.logname == nil
+			@options.logname = @config.get_global_key_value("logname")
+			if @options.logname.length == 0
+				@options.logname = "#{@options.profile}.#{date_time_str(@options.logfmt)}.log"
+			end
+		end
+
+		$msg.debug "log=#{@options.logdir}/#{@options.logname}"
+		$msg.privlog(@options.logname, @options.logdir, 0600)
+
+		$msg.warn "backup destination not set" if not File.exist?(@dest)
 
 		@sshopts  << " --dry-run" if @options.dry_run
 
@@ -1506,12 +1550,12 @@ class Rubac
 			eval @options.cmd
 		when "run_command", "snapshot_command", "list_command", "history_command", "search_command"
 			@options.client.each do |client|
-				puts ">>>>> Running #{@options.cmd} for #{client}" if $debug
+				$msg.debug ">>>>> Running #{@options.cmd} for #{client}"
 				process_command_client(client)
-				puts "<<<<< Done running #{@options.cmd} for #{client}" if $debug
+				$msg.debug "<<<<< Done running #{@options.cmd} for #{client}"
 			end
 		else
-			puts "huh? #{Config::CONFIG['host_os']}"
+			$msg.puts "huh? #{Config::CONFIG['host_os']}"
 		end
 
 	end
@@ -1527,22 +1571,22 @@ class Rubac
 	#end
 end
 
-$o = Msg.new("console,syslog,fart")
+$msg = Msg.new("console")
 
 $signal_exit = false
 
 def trapSigTerm
-	puts "Ignoring TERM signal"
+	$stderr << "Ignoring TERM signal"
 	$signal_exit = true
 end
 
 def trapSigInt
-	puts "Ignoring INT signal"
+	$stderr << "Ignoring INT signal"
 	$signal_exit = true
 end
 
 def trapSigHup
-	puts "Ignoring HUP signal"
+	$stderr << "Ignoring HUP signal"
 	$signal_exit = true
 end
 
