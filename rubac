@@ -192,6 +192,37 @@ END_OF_MESSAGE
 	end
 end
 
+$LOGLEVELS = {	"emerg"  => 0,
+		"alert"  => 1,
+		"crit"   => 2,
+		"err"    => 3,
+		"warn"   => 4,
+		"notice" => 5,
+		"info"   => 6,
+		"debug"  => 7 }
+
+class MsgObject
+	def initialize(name, handle, datefmt=nil, sync=false)
+		@name = name
+		@io = handle
+		@datefmt = datefmt
+		@io.sync = sync if @io.class == File
+		@loglevel = $LOGLEVELS["info"]
+	end
+
+	def now
+		Time.now.strftime(@datefmt) + " "
+	end
+
+	def << (msg)
+		msg.each do |line|
+			line.chomp!
+			@io << now if @datefmt
+			@io << line + "\n"
+		end
+	end
+end
+
 class Msg
 	attr_accessor :console
 	attr_accessor :syslog
@@ -205,21 +236,13 @@ class Msg
 
 		puts "Init #{me}: #{dest}" if @debug
 
-		@LOGLEVELS = {	"emerg"  => 0,
-				"alert"  => 1,
-				"crit"   => 2,
-				"err"    => 3,
-				"warn"   => 4,
-				"notice" => 5,
-				"info"   => 6,
-				"debug"  => 7 }
+		@loglevel = $LOGLEVELS["info"]
 
-		@loglevel = @LOGLEVELS["info"]
-
-		@console = $stdout
+		@console = nil
 		@syslog = nil 
 		@privlog = nil
 		@notify = nil
+
 		@datefmt = "%b %d %H:%M:%S"
 
 		return if dest == nil
@@ -230,10 +253,11 @@ class Msg
 			puts "Setting dest=#{d}" if @debug
 			case d
 			when 'console'
-				@console = $stdout
-				@console.sync = true
+				@console = MsgObject.new("console", $stdout, nil, true)
 			when 'syslog'
 				@syslog = true
+			when 'notify'
+				@notify = MsgObject.new("notify", notify_buffer, nil, false)
 			else
 				puts "Unknown log destination \"#{d}\" in #{me}"
 			end
@@ -241,23 +265,17 @@ class Msg
 		# default log level
 	end
 private
-	def now
-		Time.now.strftime(@datefmt) + " "
-	end
-
 	def MLmessage(msg, lvl)
 		# console
 		# syslog
 		# private log
 		# notification
-		puts "Unknown message level=%{lvl}" if not @LOGLEVELS.has_key?(lvl)
-		return if @LOGLEVELS[lvl].to_i > @loglevel
+		puts "Unknown message level=%{lvl}" if not $LOGLEVELS.has_key?(lvl)
+		return if $LOGLEVELS[lvl].to_i > @loglevel
 		msg.each do |line|
-			line << "\n"
 			@console << line if @console
 			# only print blank lines to console
 			next if line.length == 1
-			line = now + line
 			@privlog << line if @privlog
 		end
 		#msg_buffer << msg if @notify
@@ -284,14 +302,14 @@ public
 
 		log = File.join(@logdir, @logname)
 		privlog = File.new(log, File::CREAT|File::APPEND|File::RDWR, perm)
-		@privlog = privlog if privlog
+		@privlog = MsgObject.new("privlog", privlog, @datefmt, false) if privlog
 	end
 
 	def level(lvl)
-		if @LOGLEVELS[lvl].has_key?
-			@loglevel = @LOGLEVELS[lvl]
+		if $LOGLEVELS[lvl].has_key?
+			@loglevel = $LOGLEVELS[lvl]
 		else
-			@loglevel = @LOGLEVELS["info"]
+			@loglevel = $LOGLEVELS["info"]
 			err "Unknown log level"
 		end
 	end
@@ -327,6 +345,10 @@ public
 
 	def puts(msg)
 		$stdout << msg + "\n"
+	end
+
+	def log(msg)
+		@privlog << msg if @privlog
 	end
 end
  
@@ -1022,7 +1044,7 @@ class Rubac
 	end
     
 	def print_command(suffix="")
-		$msg.puts "##### #{@options.cmd} for #{@client} #{suffix} #####"
+		$msg.info "##### #{@options.cmd} for #{@client} #{suffix} #####"
 	end
 
 	def help_command 
@@ -1156,16 +1178,16 @@ class Rubac
 
 			if line[/\sis uptodate$/]
 				line.sub!(/\sis uptodate$/, "")
-				$msg.debug "uu:#{line}:uu"
+				$msg.log "uu:#{line}:uu"
 				log << line
 			elsif line[/^#{inc}.*/]
-				$msg.debug "ii:#{line}:ii"
+				$msg.log "ii:#{line}:ii"
 				log << line
 			elsif line[/^\s*deleting\s+/]
 			# if deleting, remove the file from 'log', if it exists
 			# ^deleting home/rico/.thumbnails/normal/6bf9e300a41296740a5fdd89b98e1d93.png
 				line.sub!(/^\s*deleting\s+/, "/")
-				$msg.debug "dd:#{line}:dd"
+				$msg.info "deleting #{line}"
 				log.delete(line)
 			else
 				$msg.info "$ #{line}"
