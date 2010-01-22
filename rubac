@@ -202,22 +202,26 @@ $LOGLEVELS = {	"emerg"  => 0,
 		"debug"  => 7 }
 
 class MsgObject
+	attr :client, true
+
 	def initialize(name, handle, datefmt=nil, sync=false)
 		@name = name
 		@io = handle
 		@datefmt = datefmt
 		@io.sync = sync if @io.class == File
+
+		@client = "localhost"
 		@loglevel = $LOGLEVELS["info"]
 	end
 
-	def now
-		Time.now.strftime(@datefmt) + " "
+	def timestamp
+		Time.now.strftime(@datefmt) + " " + @client + " "
 	end
 
 	def << (msg)
 		msg.each do |line|
 			line.chomp!
-			@io << now if @datefmt
+			@io << timestamp if @datefmt
 			@io << line + "\n"
 		end
 	end
@@ -281,6 +285,13 @@ private
 		#msg_buffer << msg if @notify
 	end
 public
+	def set_client(client="localhost")
+		@console.client = client if @console
+		@privlog.client = client if @privlog
+		@syslog.client = client if @syslog
+		@notify.client = client if @notify
+	end
+
 	# Jan 17 09:08:33 host 
 	# %b %d %H:%M:%S hostname
 	def privlog(name, dir, perm=0644)
@@ -1574,9 +1585,11 @@ class Rubac
 			eval @options.cmd
 		when "run_command", "snapshot_command", "list_command", "history_command", "search_command"
 			@options.client.each do |client|
+				$msg.set_client(client)
 				$msg.debug ">>>>> Running #{@options.cmd} for #{client}"
 				process_command_client(client)
 				$msg.debug "<<<<< Done running #{@options.cmd} for #{client}"
+				$msg.set_client
 			end
 		else
 			$msg.puts "huh? #{Config::CONFIG['host_os']}"
