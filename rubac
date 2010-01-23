@@ -709,7 +709,8 @@ class Rubac
 		else
 			@sshopts = "-a -v -v"
 		end
-		@sshopts << " --relative --delete --delete-excluded --ignore-errors"
+		# don't --delete on update command, add this on run only
+		@sshopts << " --relative --delete-excluded --ignore-errors"
 
 		# use the value set in the environment, if set
 		if ENV['RSYNC_RSH']
@@ -1088,15 +1089,12 @@ class Rubac
 			nname = @config.get_client_incrementals(host, n)
 			mname = @config.get_client_incrementals(host, m)
 
-			$msg.debug "n=#{n} nname=#{nname} m=#{m} mname=#{mname}"
+			$msg.puts "n=#{n} nname=#{nname} m=#{m} mname=#{mname}"
 
 			next if nname.length == 0
 
 			ndest = File.join(pdest, nname)
 			mdest = File.join(pdest, mname)
-
-			p ndest
-			p mdest
 
 			# Someone has deleted an incremental backup
 			if not File.exist?(ndest)
@@ -1149,6 +1147,7 @@ class Rubac
 		end
 
 		cmd =  "rsync #{@sshopts} #{@useropts}"
+		cmd << " --delete" if not @options.update
 		cmd << " --link-dest=#{ldest}" if ldest
 		# write the excludes to a file and use --exclude-from 
 		if @excludes.length > 0
