@@ -376,7 +376,7 @@ class Config_rubac
 			'globals' => {
 				'version' => {
 					'major' => '0',
-					'minor' => '8',
+					'minor' => '9',
 					'revision' => "$Rev$"[6..-3]
 				},
 				'opts' => '',
