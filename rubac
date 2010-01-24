@@ -460,38 +460,37 @@ class Config_rubac
 		@config['globals'].to_hash
 	end
 
-	def del_global_key(item, key, delim=",")
-		return if key == nil or key.length == 0
+	def del_global_key(key, val, delim=",")
+		return if val == nil or val.length == 0
 
-		return if not @config['globals'].has_key?(item)
+		return if not @config['globals'].has_key?(key)
 
 		items = []
-		items = @config['globals']["#{item}"].split(delim)
+		items = @config['globals']["#{key}"].split(delim)
 		return if items.nitems == 0
 
-		keys = key.split(delim)
-		keys.each { |k|
+		vals = val.split(delim)
+		vals.each { |k|
 			k.strip!
 			items.delete(k)
 		}
-		@config['globals']["#{item}"] = items.join(delim)
-
+		@config['globals']["#{key}"] = items.join(delim)
 	end
 
-	def add_global_key(item, key, delim=",")
-		return if key == nil or key.length = 0
-		# key can be a comma separated list, should convert to array
-		# and compare all values of the with all values in keys below
-		keys = key.split(delim)
-		keys.each { |k| k.strip! }
+	def add_global_key(key, val, delim=",")
+		return if val == nil or val.length = 0
+		# val can be a comma separated list, should convert to array
+		# and compare all values of the with all values in vals below
+		vals = val.split(delim)
+		vals.each { |k| k.strip! }
 		
 		items = []
-		if @config['globals']["#{item}"].split(delim).length > 0
-			items=@config['globals']["#{item}"].split(delim)
+		if @config['globals']["#{key}"].split(delim).length > 0
+			items=@config['globals']["#{key}"].split(delim)
 		end
 		# merge, removing duplicates
-		items = items | keys
-		@config['globals']["#{item}"] = items.join(delim)
+		items = items | vals
+		@config['globals']["#{key}"] = items.join(delim)
 	end
 
 	# type is add/delete
@@ -571,40 +570,40 @@ class Config_rubac
 		@config['clients']["#{host}"]['incrementals']["#{n}"].to_s
 	end
 
-	def del_client_key(host, item, key, delim=",")
-		return if key == nil or key.length == 0
+	def del_client_key(host, key, val, delim=",")
+		return if val == nil or val.length == 0
 		get_client_config(host)
 
-		return if not @config['clients']["#{host}"].has_key?(item)
+		return if not @config['clients']["#{host}"].has_key?(key)
 
 		items = []
-		items = @config['clients']["#{host}"]["#{item}"].split(delim)
+		items = @config['clients']["#{host}"]["#{key}"].split(delim)
 		return if items.nitems == 0
 
-		keys = key.split(delim)
-		keys.each { |k|
+		vals = val.split(delim)
+		vals.each { |k|
 			k.strip!
 			items.delete(k)
 		}
-		@config['clients']["#{host}"]["#{item}"] = items.join(delim)
+		@config['clients']["#{host}"]["#{key}"] = items.join(delim)
 	end
 
-	# append (or set) the specified item for the specified client
-	def add_client_key(host, item, key, delim=",")
-		return if key == nil or key.length == 0
+	# append (or set) the specified key for the specified client
+	def add_client_key(host, key, val, delim=",")
+		return if val == nil or val.length == 0
 
 		get_client_config(host)
-		# key can be a comma separated list, should convert to array
-		# and compare all values of the with all values in keys below
-		keys = key.split(delim)
-		keys.each { |k| k.strip! }
+		# val can be a comma separated list, should convert to array
+		# and compare all values of the with all values in vals below
+		vals = val.split(delim)
+		vals.each { |k| k.strip! }
 
 		items = []
-		if @config['clients']["#{host}"]["#{item}"].length > 0
-			items = @config['clients']["#{host}"]["#{item}"].split(delim)
+		if @config['clients']["#{host}"]["#{key}"].length > 0
+			items = @config['clients']["#{host}"]["#{key}"].split(delim)
 		end
-		items = items | keys
-		@config['clients']["#{host}"]["#{item}"] = items.join(delim)
+		items = items | vals
+		@config['clients']["#{host}"]["#{key}"] = items.join(delim)
 	end
 
 	# type is add/delete
@@ -1028,6 +1027,30 @@ class Rubac
 		# TO DO - place in local vars, etc
 		@config = Config_rubac.new
 		@config.load_xml(@options.dbname, @options.datadir)
+
+		# setup logging immediately after loading the configuration
+		if @options.logdir == nil
+			@options.logdir = @config.get_global_key_value("logdir")
+			if @options.logdir.length == 0
+				if Process.uid == 0
+					@options.logdir = "/var/log/rubac"
+				else
+					@options.logdir = "#{@options.tmp}/rubac"
+				end
+			end
+		end
+
+		if @options.logname == nil
+			@options.logname = @config.get_global_key_value("logname")
+			if @options.logname.length == 0
+				@options.logname = "#{@options.profile}.#{date_time_str(@options.logfmt)}.log"
+			end
+		end
+
+		$msg.debug "log=#{@options.logdir}/#{@options.logname}"
+		$msg.privlog(@options.logname, @options.logdir, 0600)
+
+		version_command
 
 		@config.set_global_key_value("dest", @options.dest) if @options.dest
 		@config.set_global_key_value("logname", @options.logname) if @options.logname
@@ -1556,32 +1579,9 @@ class Rubac
 	def process_command
 		@dest = @config.get_global_dest
 
-		if @options.logdir == nil
-			@options.logdir = @config.get_global_key_value("logdir")
-			if @options.logdir.length == 0
-				if Process.uid == 0
-					@options.logdir = "/var/log/rubac"
-				else
-					@options.logdir = "#{@options.tmp}/rubac"
-				end
-			end
-		end
-
-		if @options.logname == nil
-			@options.logname = @config.get_global_key_value("logname")
-			if @options.logname.length == 0
-				@options.logname = "#{@options.profile}.#{date_time_str(@options.logfmt)}.log"
-			end
-		end
-
-		$msg.debug "log=#{@options.logdir}/#{@options.logname}"
-		$msg.privlog(@options.logname, @options.logdir, 0600)
-
 		$msg.warn "backup destination not set" if not File.exist?(@dest)
 
 		@sshopts  << " --dry-run" if @options.dry_run
-
-		version_command
 
 		case @options.cmd
 		when "version_command"
@@ -1597,7 +1597,12 @@ class Rubac
 				$msg.set_client
 			end
 		else
-			$msg.puts "huh? #{Config::CONFIG['host_os']}"
+			#$msg.puts "huh? #{Config::CONFIG['host_os']}"
+			@options.client.each do |client|
+				$msg.info "#{client}:includes=#{@config.get_client_includes(client)}" if @options.include
+				$msg.info "#{client}:excludes=#{@config.get_client_excludes(client)}" if @options.exclude
+				$msg.info "#{client}:opts=#{@config.get_client_opts(client)}" if @options.opts
+			end
 		end
 
 	end
