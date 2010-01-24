@@ -799,7 +799,7 @@ class Rubac
 		@options.smtp = nil
 		@options.hist_index = nil
 		@options.address = nil
-		@options.search = nil
+		@options.search = []
 
 		@options.tmp = ENV['TMP'].to_s
 		if @options.tmp.length > 0
@@ -989,7 +989,7 @@ class Rubac
 
 		opts.on('-S', '--search glob', "Search backup history") do |glob|
 			set_command("search")
-			@options.search = glob
+			@options.search << glob
 		end
 
 		opts.on('-v', '--version', "Print version") do
@@ -1473,6 +1473,56 @@ class Rubac
 		$msg.printf("%8s=#{fmt}\n", label, value)
 	end
 
+	def search_command_history(hist, glob)
+
+		$msg.puts "Searching #{hist} for '#{glob}'"
+
+		pbasedir = false
+		basedir= File.join(@dest, @options.profile, @client, hist)
+		logf = File.join(basedir, "rubac.log.yaml")
+		if not File.exist?(logf)
+			$msg.err "opening #{logf}"
+			return
+		end
+
+		log = File.open(logf) { |yf| YAML::load(yf) }
+		log.each do |line|
+			next if not line[/#{glob}/]
+			fpath = File.join(basedir, line)
+
+			if not File.exist?(fpath)
+				$msg.err "backup log not found #{fpath}"
+				next
+			end
+
+			fstat = File.lstat(fpath)
+			# record found file inodes to eliminate duplicates
+			next if @inodes.has_key?(fstat.ino)
+			@inodes[fstat.ino] = fstat.nlink
+
+			if pbasedir == false
+				$msg.puts "basedir=#{basedir}"
+				pbasedir = true
+			end
+
+			$msg.puts "\t#{fstat.ftype}=#{line}"
+			next if not @options.verbose
+
+			search_command_pp("type", fstat.ftype)
+			if fstat.file?
+				search_command_pp("md5sum", Digest::MD5.file(fpath).hexdigest)
+			end
+			search_command_pp("size", fstat.size)
+			search_command_pp("atime", fstat.atime)
+			search_command_pp("mtime", fstat.mtime)
+			search_command_pp("ctime", fstat.ctime)
+			search_command_pp("uid:gid", "#{fstat.uid}:#{fstat.gid}")
+			search_command_pp("perm", fstat.mode, "%o")
+			search_command_pp("ino", fstat.ino)
+		end
+
+	end
+
 	def search_command
 		print_command
 		hist = []
@@ -1480,54 +1530,10 @@ class Rubac
 
 		return if hist.nitems == 0
 		
-		inodes = {}
-
-		hist.each_index do |i|
-
-			pbasedir = false
-
-			$msg.puts "Searching #{hist[i]} for /#{@options.search}/"
-			basedir= File.join(@dest, @options.profile, @client, hist[i])
-			logf = File.join(basedir, "rubac.log.yaml")
-			if not File.exist?(logf)
-				$msg.err "opening #{logf}"
-				next
-			end
-
-			log = File.open(logf) { |yf| YAML::load(yf) }
-			log.each do |line|
-				next if not line[/#{@options.search}/]
-				fpath = File.join(basedir, line)
-
-				if not File.exist?(fpath)
-					$msg.err "backup log not found #{fpath}"
-					next
-				end
-
-				fstat = File.lstat(fpath)
-				# record found file inodes to eliminate duplicates
-				next if inodes.has_key?(fstat.ino)
-				inodes[fstat.ino] = fstat.nlink
-
-				if pbasedir == false
-					$msg.puts "basedir=#{basedir}"
-					pbasedir = true
-				end
-
-				$msg.puts "\t#{fstat.ftype}=#{line}"
-				next if not @options.verbose
-
-				search_command_pp("type", fstat.ftype)
-				if fstat.file?
-					search_command_pp("md5sum", Digest::MD5.file(fpath).hexdigest)
-				end
-				search_command_pp("size", fstat.size)
-				search_command_pp("atime", fstat.atime)
-				search_command_pp("mtime", fstat.mtime)
-				search_command_pp("ctime", fstat.ctime)
-				search_command_pp("uid:gid", "#{fstat.uid}:#{fstat.gid}")
-				search_command_pp("perm", fstat.mode, "%o")
-				search_command_pp("ino", fstat.ino)
+		@inodes = {}
+		@options.search.each do |glob|
+			hist.each_index do |i|
+				search_command_history(hist[i], glob)
 			end
 		end
 	end
