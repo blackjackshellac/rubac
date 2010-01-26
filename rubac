@@ -34,7 +34,7 @@
 #   -r, --run               Run specified profile
 #   -s, --snapshot=NAME     Created a snapshot based on most recent backup
 #   -n, --dry-run           Perform a trial run of the backup
-#   -z, --compress          TODO Compress the file data during backup
+#   -z, --compress          Compress the file data during backup
 #
 #   -H, --history[=INDEX]   Backup history, or specify index to see backup details
 #   -T, --restore-to=PATH   TODO Restore to the given base path (default is TMP)
@@ -396,6 +396,7 @@ class Config_rubac
 					'excludes' => '',
 					'opts' => '',
 					'ninc' => '5',
+					'compress' => false,
 					'incrementals' => { '0' => "" }
 				}
 			}
@@ -701,15 +702,15 @@ class Rubac
 
 		@includes = ""
 		@excludes = ""
-		@useropts = ""
 		# rsync -a --relative --delete --delete-excluded --link-dest=/home/rubac/linguini/default/rubac.1 /home/etienne /home/rubac/linguini/default/rubac.0
+		@sshopts = {}
 		if ENV['RUBAC_SSHOPTS']
-			@sshopts = ENV['RUBAC_SSHOPTS']
+			@sshopts["global"] = ENV['RUBAC_SSHOPTS']
 		else
-			@sshopts = "-a -v -v"
+			@sshopts["global"] = "-a -v -v"
 		end
 		# don't --delete on update command, add this on run only
-		@sshopts << " --relative --delete-excluded --ignore-errors"
+		@sshopts["global"] << " --relative --delete-excluded --ignore-errors"
 
 		# use the value set in the environment, if set
 		if ENV['RSYNC_RSH']
@@ -794,6 +795,7 @@ class Rubac
 		@options.update = false
 		@options.cmd = nil
 		@options.dry_run = false
+		@options.compress = false
 		@options.email = nil
 		@options.smtp = nil
 		@options.hist_index = nil
@@ -964,6 +966,10 @@ class Rubac
 			@options.dry_run = true
 		end
 
+		opts.on('-z', '--compress', "Compress the file data during backup") do
+			@options.compress = true
+		end
+
 		opts.on('-h', '--help',    "Print help") do   #   { output_help }
 			set_command("help")
 		end
@@ -1072,6 +1078,7 @@ class Rubac
 				@config.client_updates(client, @options.update_cmd, @options.include, @options.exclude, @options.opts)
 				@config.set_client_key_value(client, "address", @options.address) if @options.address
 				@config.set_client_key_value(client, "ninc", @options.ninc) if @options.ninc
+				@config.set_client_key_value(client, "compress", @options.compress) if @options.compress
 			end
 		end
 
@@ -1169,7 +1176,7 @@ class Rubac
 			log = Array.new
 		end
 
-		cmd =  "rsync #{@sshopts} #{@useropts}"
+		cmd =  "rsync #{@sshopts["global"]} #{@sshopts["#{host}"]}"
 		cmd << " --delete" if not @options.update
 		cmd << " --link-dest=#{ldest}" if ldest
 		# write the excludes to a file and use --exclude-from 
@@ -1413,7 +1420,7 @@ class Rubac
 		else
 			$msg.printf %Q(%10s=%s\n), "dest", @dest
 		end
-		$msg.printf %Q(%10s=%s\n), "ssh opts", @sshopts
+		$msg.printf %Q(%10s=%s\n), "ssh opts", @sshopts["global"]
 		$msg.printf %Q(\n)
 		@global_settings = true
 	end
@@ -1570,8 +1577,12 @@ class Rubac
 		@client = client
 		@includes = @config.get_client_includes(client)
 		@excludes = @config.get_client_excludes(client)
-		@useropts = @config.get_client_opts(client)
 		@address = @config.get_client_address(client)
+
+		@options.compress = @config.get_client_key_value(client, "compress")
+
+		@sshopts["#{client}"] = @config.get_client_opts(client)
+		@sshopts["#{client}"] << " --compress" if @options.compress
 
 		eval @options.cmd
 	end
@@ -1581,7 +1592,7 @@ class Rubac
 
 		$msg.warn "backup destination not set" if not File.exist?(@dest)
 
-		@sshopts  << " --dry-run" if @options.dry_run
+		@sshopts["global"]  << " --dry-run" if @options.dry_run
 
 		case @options.cmd
 		when "version_command"
