@@ -37,6 +37,7 @@
 #   -z, --compress          Compress the file data during backup
 #
 #   -H, --history[=INDEX]   Backup history, or specify index to see backup details
+#   -P, --prune[=NAME]      Delete the specified incremental backup, the default is the oldest
 #   -T, --restore-to=PATH   TODO Restore to the given base path (default is TMP)
 #   -R, --restore=FILE      TODO Restore file as file[:index] if the incremental index is not given it defaults to most recent
 #   -F, --restore-from=FILE TODO Restore file list from the given file (comma or new line delimited)
@@ -799,6 +800,7 @@ class Rubac
 		@options.email = nil
 		@options.smtp = nil
 		@options.hist_index = nil
+		@options.prune = nil
 		@options.address = nil
 		@options.search = []
 
@@ -992,6 +994,11 @@ class Rubac
 			@options.hist_index = index.to_i if index != nil
 		end
 
+		opts.on('-P', '--prune [NAME]', "Delete specified incremental backup") do |name|
+			set_command("prune")
+			@options.prune = name
+		end
+
 		opts.on('-S', '--search glob', "Search backup history") do |glob|
 			set_command("search")
 			@options.search << glob
@@ -1107,7 +1114,6 @@ class Rubac
 			rm_flags.merge!( :noop => true )
 		end
 
-		link_dest = false
 		i = []
 		i = (1..ninc).to_a.reverse
 		i.each do |m|
@@ -1142,7 +1148,6 @@ class Rubac
 			end
 			if File.exist?(ndest)
 				@config.set_client_incremental(host, m, nname)
-				link_dest = true
 			end
 		end
 	end
@@ -1271,14 +1276,32 @@ class Rubac
 		"rubac." + date_time_str("%Y-%m-%d_%H-%M-%S")
 	end
 
+	def get_client_dir(host, create=false, backup=nil, path=nil)
+		dest=File.join(@dest, @options.profile, host)
+		dest=File.join(dest, backup) if backup
+		FileUtils.mkdir_p(dest) if create
+		dest=File.join(dest, path) if path
+		dest
+	end
+
+	def accept_signals(default=true)
+		if default
+			Signal.trap("TERM", "DEFAULT")
+			Signal.trap("INT", "DEFAULT")
+			Signal.trap("HUP", "DEFAULT")
+		else
+			Signal.trap("TERM", "trapSigTerm")
+			Signal.trap("INT", "trapSigInt")
+			Signal.trap("HUP", "trapSigHup")
+		end
+	end
+
 	# backup to bdir with hardlink to ldir, if it exists
 	def run_command
 
 		print_command
 
-		Signal.trap("TERM", "trapSigTerm")
-		Signal.trap("INT", "trapSigInt")
-		Signal.trap("HUP", "trapSigHup")
+		accept_signals(false)
 
 		host = @client
 
@@ -1301,8 +1324,7 @@ class Rubac
 
 		ldir = "__none__" if ldir.length == 0
 
-		pdest = File.join(@dest, @options.profile, host)
-		FileUtils.mkdir_p(pdest)
+		pdest = get_client_dir(host, true)
 
 		# if flock(LOCK_EX|LOCK_NB) == false puts "cannot get exclusive lock"
 		# g=File.new("/tmp/junkol", File::CREAT|File::RDONLY, 0600)
@@ -1357,14 +1379,12 @@ class Rubac
 			@config.set_client_incremental(host, 0, bdir)
 		end
 
-		@config.save_xml
+		@config.save_xml if not @options.dry_run
 
 		runlock.flock(File::LOCK_UN)
 		File.delete(rlock)
 
-		Signal.trap("TERM", "DEFAULT")
-		Signal.trap("INT", "DEFAULT")
-		Signal.trap("HUP", "DEFAULT")
+		accept_signals(true)
 
 		exit(1) if $signal_exit == true
 	end
@@ -1460,7 +1480,7 @@ class Rubac
 
 		if @options.hist_index != nil
 			$msg.printf "%s\n", "#{cli}:#{@options.hist_index}: #{hist[0]}"
-			logf = File.join(@dest, @options.profile, @client, hist[0], "rubac.log.yaml")
+			logf = get_client_dir(@client, false, hist[0], "rubac.log.yaml")
 			if not File.exist?(logf)
 				$msg.err "opening #{logf}"
 				return
@@ -1508,7 +1528,7 @@ class Rubac
 		$msg.puts "Searching #{hist} for '#{glob}'"
 
 		pbasedir = false
-		basedir= File.join(@dest, @options.profile, @client, hist)
+		basedir= get_client_dir(@client, false, hist)
 		logf = File.join(basedir, "rubac.log.yaml")
 		if not File.exist?(logf)
 			$msg.err "opening #{logf}"
@@ -1568,6 +1588,82 @@ class Rubac
 		end
 	end
 
+	def prune_command_prune(host, hist, index)
+		$msg.info "Pruning #{host}:#{hist[index]} for history index #{index}"
+
+		if index < 0 or index >= hist.nitems
+			err "Invalid index=#{index} with hist.nitems=#{hist.nitems}"
+			$ret = 1
+			return
+		end
+
+		ninc = @config.get_client_ninc(host)
+
+		# setup flags for delete
+		rm_flags = { :force => true, :verbose => true }
+		if @options.dry_run 
+			rm_flags.merge!( :noop => true )
+		end
+
+		j = hist.nitems-1
+		if index < j
+			a = (index..j).to_a
+			a.each do |x|
+				y = x+1
+				break if y == hist.nitems
+				$msg.info "#{x}:#{hist[y]}"
+				@config.set_client_incremental(host, x, hist[y])
+			end
+			@config.set_client_incremental(host, j, "")
+		else
+			@config.set_client_incremental(host, index, "")
+		end
+
+		accept_signals(false)
+
+		prune=get_client_dir(host, false, hist[index])
+		if File.exist?(prune)
+			$msg.info "Remove #{index}:#{hist[index]}:#{prune}"
+			FileUtils.rm_r(prune, rm_flags)
+		else
+			$msg.warn "Prune backup #{prune} not found"
+		end
+		@config.save_xml if not @options.dry_run
+
+		accept_signals(true)
+	end
+
+	def prune_command
+		hist = []
+		hist = history_command_get_history(@client)
+
+		if hist.nitems < 1
+			$msg.err "No history found for #{@client}"
+			$ret = 1
+			return
+		end
+
+		@options.prune = hist[hist.nitems-1] if @options.prune == nil
+
+		index = nil
+		hist.each_index do |i|
+			if hist[i] == @options.prune
+				index = i
+				break
+			end
+		end
+
+		if index == nil
+			$msg.err "Prune name #{@options.prune} not found"
+			$ret = 1
+			return
+		end
+
+		$msg.info "Pruning #{hist[index]} with index=#{index}"
+
+		prune_command_prune(@client, hist, index)
+	end
+
 	def version_command
 		ver = @config.version
 		$msg.puts "#{File.basename(__FILE__)} " + ver
@@ -1599,7 +1695,10 @@ class Rubac
 			# already done above
 		when "help_command", "usage_command"
 			eval @options.cmd
-		when "run_command", "snapshot_command", "list_command", "history_command", "search_command"
+		when "run_command", "snapshot_command", "list_command", "history_command", "search_command", "prune_command"
+
+			$msg.die "backup destination not found" if not File.exist?(@dest)
+
 			@options.client.each do |client|
 				$msg.set_client(client)
 				$msg.debug ">>>>> Running #{@options.cmd} for #{client}"
@@ -1634,20 +1733,24 @@ $msg = Msg.new("console")
 $signal_exit = false
 
 def trapSigTerm
-	$stderr << "Ignoring TERM signal"
+	$stderr << "TERM signal ignored"
 	$signal_exit = true
 end
 
 def trapSigInt
-	$stderr << "Ignoring INT signal"
+	$stderr << "INT signal ignored"
 	$signal_exit = true
 end
 
 def trapSigHup
-	$stderr << "Ignoring HUP signal"
+	$stderr << "HUP signal ignored"
 	$signal_exit = true
 end
 
+$ret = 0
+
 rubac = Rubac.new(ARGV, STDIN)
 rubac.main
+
+exit $ret
 
