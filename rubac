@@ -751,6 +751,7 @@ class Rubac
 		else
 			@options.client = [ ]
 		end
+		@options.all = false
 
 		# 
 		# If /etc/rubac is writable use it as default, otherwise use
@@ -1035,6 +1036,16 @@ class Rubac
 		true if @arguments.length >= 1 
 	end
 
+	def process_arguments_clients
+		return if @options.client.nitems > 0
+		#@config.get_clients.each_key do |client|
+		#	@options.client << client
+		#end
+		@options.client = @config.get_clients.keys
+		@options.all = true
+		$msg.info "Set clients = #{@options.client.keys.join(", ")}"
+	end
+
 	# Setup the arguments
 	def process_arguments
 		# TO DO - place in local vars, etc
@@ -1070,12 +1081,14 @@ class Rubac
 		@config.set_global_key_value("logdir", @options.logdir) if @options.logdir
 		@config.set_global_key_value("smtp", @options.smtp) if @options.smtp
 
-		if @options.client.nitems == 0
-			#@config.get_clients.each_key do |client|
-			#	@options.client << client
-			#end
-			@options.client = @config.get_clients.keys
-		end
+		process_arguments_clients
+
+		#if @options.client.nitems == 0
+		#	@config.get_clients.each_key do |client|
+		#		@options.client << client
+		#	end
+		#	@options.client = @config.get_clients.keys
+		#end
 
 		if @options.global
 			@config.global_updates(@options.update_cmd, @options.include, @options.exclude, @options.opts)
@@ -1093,7 +1106,7 @@ class Rubac
 	end
     
 	def print_command(suffix="")
-		$msg.info "##### #{@options.cmd} for #{@client} #{suffix} #####"
+		$msg.info "##### #{@options.cmd.sub(/_command/, '')} for #{@client} #{suffix} #####"
 	end
 
 	def help_command 
@@ -1683,6 +1696,18 @@ class Rubac
 		eval @options.cmd
 	end
 
+	def process_command_clients
+		$msg.die "backup destination not set" if not File.exist?(@dest)
+
+		@options.client.each do |client|
+			$msg.set_client(client)
+			$msg.debug ">>>>> Running #{@options.cmd} for #{client}"
+			process_command_client(client)
+			$msg.debug "<<<<< Done running #{@options.cmd} for #{client}"
+			$msg.set_client
+		end
+	end
+
 	def process_command
 		@dest = @config.get_global_dest
 
@@ -1695,17 +1720,11 @@ class Rubac
 			# already done above
 		when "help_command", "usage_command"
 			eval @options.cmd
-		when "run_command", "snapshot_command", "list_command", "history_command", "search_command", "prune_command"
-
-			$msg.die "backup destination not found" if not File.exist?(@dest)
-
-			@options.client.each do |client|
-				$msg.set_client(client)
-				$msg.debug ">>>>> Running #{@options.cmd} for #{client}"
-				process_command_client(client)
-				$msg.debug "<<<<< Done running #{@options.cmd} for #{client}"
-				$msg.set_client
-			end
+		when "list_command", "history_command", "search_command"
+			process_command_clients
+		when "run_command", "snapshot_command", "prune_command"
+			$msg.die "Must specify at least one client" if @options.all == true
+			process_command_clients
 		else
 			#$msg.puts "huh? #{Config::CONFIG['host_os']}"
 			@options.client.each do |client|
