@@ -1043,7 +1043,7 @@ class Rubac
 		#end
 		@options.client = @config.get_clients.keys
 		@options.all = true
-		$msg.info "Set clients = #{@options.client.keys.join(", ")}"
+		$msg.debug "clients = #{@options.client.join(", ")}"
 	end
 
 	# Setup the arguments
