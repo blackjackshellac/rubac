@@ -1724,7 +1724,7 @@ class Rubac
 		@options.compress = @config.get_client_key_value(client, "compress")
 
 		@sshopts["#{client}"] = @config.get_client_opts(client)
-		@sshopts["#{client}"] << " --compress" if @options.compress
+		@sshopts["#{client}"] << " --compress" if @options.compress == true
 
 		eval @options.cmd
 	end
