@@ -19,7 +19,8 @@
 #   -i, --include=PATH      Include path, comma separate multiple paths
 #   -x, --exclude=PATH      Exclude path, comma separate multiple paths
 #   -o, --opts=OPTS         Extra rsync options
-#       --delete=PATH       Delete any specified includes, excludes or opts
+#       --delete            Delete any specified includes, excludes, opts
+#       --delete [client]   Delete the specified client configuration (does not purge the backups)
 #   -d, --dest=DEST         Local destination path (eg., /mnt/backup)
 #   -m, --mail=EMAIL        TODO Notification email, comma separated list
 #       --smtp=SERVER       TODO IP Address of smtp server (default is localhost)
@@ -28,7 +29,7 @@
 #       --log[=NAME]        Name of log file, (default is profile.%Y-%m-%d.log)
 #   -y, --syslog            TODO Use syslog for logging [??]
 #
-#   -l, --list              List the includes, excludes, etc., for the named profile
+#   -l, --list [compact]    List the includes, excludes, etc., for the named profile
 #   -u, --update            Perform update backup, no incremental backups
 #   -I, --incremental[=N]   Number of incremental backups (default is 5)
 #   -r, --run               Run specified profile
@@ -43,7 +44,8 @@
 #   -F, --restore-from=FILE TODO Restore file list from the given file (comma or new line delimited)
 #   -S, --search=GLOB       Search for the given glob in the backup history
 #
-#   -h, --help              Displays help message
+#   -h, --help              Displays help
+#       --examples          Displays examples
 #   -v, --version           Display the version
 #   -q, --quiet             Output as little as possible, overrides verbose
 #   -V, --verbose           Verbose output
@@ -52,26 +54,18 @@
 #
 #   Setup and use a default backup
 #
-#   rubac -g -o "--delete-excluded"
-#   rubac -g --datadir=/etc/rubac
-#   rubac -i "/home/steeve,/home/lissa,/home/etienne" -x "*/.gvfs/"
-#   rubac -x "*/.thumbnails/,*/.thunderbird/*/ImapMail/,*/.beagle/"
-#   rubac -m backupadmin@mail.host
-#   rubac -l /var/log/rubac
+#   rubac -c esme -g -o "--acls --xattrs"
+#   rubac -c esme -i "/home/steeve,/home/lissa,/home/etienne" -x "*/.gvfs/"
+#   rubac -c esme -x "*/.thumbnails/,*/.thunderbird/*/ImapMail/,*/.beagle/"
+#   rubac -c esme -m backupadmin@mail.host
+#   rubac -c esme -l /var/log/rubac
 #   ...
-#   rubac --run
+#   rubac -c esme --run
+#   rubac -c esme --update
 #
-#   List then backup client esme using the esme profile
-#   rubac -c esme -p esme --list
-#   rubac -c esme -p esme --run
-#
-#   Should one be able to specify a client using rsync notation,
-#
-#   rubac -c donkey -i "/home/steeve,/home/lissa,/home/etienne" -x "*/.gvfs/"
-#   rubac -i "donkey:/home/steeve,donkey:/home/lissa,donkey:/home/etienne"
-#
-#   Each include path should probably include a client (unless local) so
-#   the host should be part of the includes database table.
+#   List then show history of client esme using the esme profile
+#   rubac -c esme --list compact
+#   rubac -c esme --history
 #
 # == Environment Variables ==
 #
@@ -454,6 +448,11 @@ class Config_rubac
 		@config['clients'].merge!(client)
 	end
 
+	def del_client(host)
+		return if not @config['clients'].has_key?(host)
+		@config['clients'].delete(host)
+	end
+
 	def get_config
 		@config.to_hash
 	end
@@ -711,7 +710,9 @@ class Rubac
 			@sshopts["global"] = "-a -v -v"
 		end
 		# don't --delete on update command, add this on run only
-		@sshopts["global"] << " --relative --delete-excluded --ignore-errors"
+		@sshopts["global"] << " --relative --delete-excluded --ignore-errors --one-file-system"
+		#@sshopts["global"] << " --acls"
+		#@sshopts["global"] << " --xattrs"
 
 		# use the value set in the environment, if set
 		if ENV['RSYNC_RSH']
@@ -788,11 +789,13 @@ class Rubac
 		@options.verbose = false
 		@options.quiet = false
 		@options.update_cmd = UPDATE_CMD_ADD
+		@options.delete_client = []
 		@options.include = nil
 		@options.exclude = nil
 		@options.dest = nil
 		@options.opts = nil
 		@options.snapshot = nil
+		@options.listkey = nil
 		@options.run = false
 		@options.update = false
 		@options.cmd = nil
@@ -875,6 +878,15 @@ class Rubac
 		end
 	end
 
+	def parse_option_list(list, opt, delim=",")
+		# strip whitespace
+		opt.strip!
+		opts = []
+		opts = list.split(delim) if list
+		opts << opt 
+		opts.join(delim)
+	end
+
 	def parsed_options?
 
 		# Specify options
@@ -884,9 +896,13 @@ class Rubac
 
 		opts.on('-g', '--global', "Apply options to the global settings") { @options.global = true }
 
-		opts.on('--delete', "Delete any specified includes, excludes, etc") {
+		opts.on('--delete [CLIENT]', "Delete any specified includes, excludes, opts ... or the specified client") do |cli|
 			@options.update_cmd = UPDATE_CMD_DEL
-		}
+			if cli
+				$msg.info "Setup #{cli} for deletion"
+				@options.delete_client << cli if cli
+			end
+		end
 
 		opts.on('-LPATH', '--logdir PATH', "Set the log directory") do |dir|
 			@options.logdir = dir
@@ -913,24 +929,24 @@ class Rubac
 		end
 
 		opts.on('-iPATH', '--include PATH', "Add include path") do |inc|
-			# strip whitespace
-			inc.strip!
+			delim=","
+			@options.include = parse_option_list(@options.include, inc, delim) 
 			# remove trailing pathslash, if any
-			inc = File.join(File.dirname(inc), File.basename(inc))
-			if @options.include
-				@options.include = @options.include + ",#{inc}"
-			else
-				@options.include = inc
+			#inc = File.join(File.dirname(inc), File.basename(inc))
+			opts = @options.include.split(delim)
+			opts.each do |o|
+				next if o == '/'
+				o.sub!(/\/$/, "")
 			end
+			@options.include = opts.join(delim)
 		end
 
 		opts.on('-xPATH', '--exclude PATH', "Add exclude path") do |exc|
-			exc.strip!
-			if @options.exclude
-				@options.exclude = @options.exclude + ",#{exc}"
-			else
-				@options.exclude = exc
-			end
+			@options.exclude = parse_option_list(@options.exclude, exc, ",")
+		end
+
+		opts.on('-oOPTS', '--opts OPTS', "Add ssh options") do |opt|
+			@options.opts = parse_option_list(@options.opts, opt, " ")
 		end
 
 		opts.on('-dPATH', '--dest PATH', "Set backup destination") do |dest|
@@ -977,6 +993,10 @@ class Rubac
 			set_command("help")
 		end
 
+		opts.on('--examples', "Display examples") do
+			set_command("examples")
+		end
+
 		opts.on('-r', '--run', "Run the backup") do
 			set_command("run")
 		end
@@ -986,8 +1006,9 @@ class Rubac
 			set_command("snapshot")
 		end
 
-		opts.on('-l', '--list', "List the backup options") do
+		opts.on('-l [KEYWORD]', '--list [KEYWORD]', "List the backup options") do |keyword|
 			set_command("list")
+			@options.listkey = keyword
 		end
 
 		opts.on('-H', '--history [INDEX]', "Backup history") do |index|
@@ -1083,13 +1104,6 @@ class Rubac
 
 		process_arguments_clients
 
-		#if @options.client.nitems == 0
-		#	@config.get_clients.each_key do |client|
-		#		@options.client << client
-		#	end
-		#	@options.client = @config.get_clients.keys
-		#end
-
 		if @options.global
 			@config.global_updates(@options.update_cmd, @options.include, @options.exclude, @options.opts)
 			@config.set_global_key_value("ninc", @options.ninc) if @options.ninc
@@ -1099,6 +1113,13 @@ class Rubac
 				@config.set_client_key_value(client, "address", @options.address) if @options.address
 				@config.set_client_key_value(client, "ninc", @options.ninc) if @options.ninc
 				@config.set_client_key_value(client, "compress", @options.compress) if @options.compress
+			end
+		end
+
+		if @options.delete_client.nitems > 0
+			@options.delete_client.each do |cli|
+				$msg.info "Deleting client #{cli}"
+				@config.del_client(cli)
 			end
 		end
 
@@ -1116,6 +1137,10 @@ class Rubac
     
 	def usage_command
 		RDoc::usage('Synopsis', 'Usage', 'Options') # gets usage from comments above
+	end
+
+	def examples_command
+		RDoc::usage('Examples')
 	end
  
 	def run_command_prep_linkdest(host, pdest)
@@ -1421,6 +1446,11 @@ class Rubac
 
 		return if inc.length == 0
 
+		if @options.listkey == "compact"
+			$msg.printf "%10s=\'%s\'\n", key, inc
+			return
+		end
+
 		inc = inc.split("#{delim}")
 		$msg.printf "%10s=", key
 
@@ -1522,6 +1552,9 @@ class Rubac
 			break if name.length == 0
 			entries << name
 		end
+		#TODO Dir.chdir(get_client_dir(cli, false))
+		#TODO entries = Dir.glob('rubac.*')
+		#TODO entries.reverse
 		entries
 	end
 
@@ -1718,7 +1751,7 @@ class Rubac
 		case @options.cmd
 		when "version_command"
 			# already done above
-		when "help_command", "usage_command"
+		when "help_command", "usage_command", "examples_command"
 			eval @options.cmd
 		when "list_command", "history_command", "search_command"
 			process_command_clients
