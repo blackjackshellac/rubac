@@ -1769,6 +1769,7 @@ class Rubac
 		@options.restore.each do |restore|
 			cmd="rsync #{@sshopts["restore"]} #{restore[1..-1]} #{dest}"
 			$msg.info cmd
+			$msg.info "\t#{File.join(bsource, restore)} => #{dest}"
 		end
 	end
 
