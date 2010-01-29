@@ -40,9 +40,9 @@
 #   -H, --history[=INDEX]   Backup history, or specify index to see backup details
 #   -P, --prune             Delete the selected backup or snapshot (TODO) (default is the oldest)
 #       --select[=NAME]     TODO Select a backup for pruning or restoring
-#   -T, --restore-to=PATH   TODO Restore to the given base path (default is TMP)
 #   -R, --restore=FILE      TODO Restore file as file[:index] if the incremental index is not given it defaults to most recent
-#   -F, --restore-from=FILE TODO Restore file list from the given file (comma or new line delimited)
+#       --restore-to=PATH   TODO Restore to the given base path (default is TMP)
+#       --restore-from=FILE TODO Restore file list from the given file (comma or new line delimited)
 #   -S, --search=GLOB       Search for the given glob in the backup history
 #
 #   -h, --help              Displays help
@@ -816,6 +816,10 @@ class Rubac
 			@options.tmp = Dir.tmpdir
 		end
 
+		@options.restore = nil
+		@options.restore_to = nil
+		@options.restore_from = nil
+
 		# use default log (constructed after processing arguments)
 		@options.logdir = nil
 		@options.logname = nil
@@ -1028,6 +1032,14 @@ class Rubac
 		opts.on('-S', '--search glob', "Search backup history") do |glob|
 			set_command("search")
 			@options.search << glob
+		end
+
+		opts.on('--restore-to PATH', "Restore to the given base path (default is TMP)") do |path|
+			@options.restore_to = path
+		end
+
+		opts.on('--restore-from FILE', "Restore file list from the given file (comma or new line delimited)") do |file|
+			@options.restore_from = file
 		end
 
 		opts.on('-v', '--version', "Print version") do
@@ -1352,13 +1364,15 @@ class Rubac
 			exit(1)
 		end
 
+		ldir = bdir = ""
 		if @options.snapshot
-			bdir = "rubac.#{@options.snapshot}"
-			ldir = @config.get_client_incrementals(host, 0)
+			bdir = "rubac.snapshot.#{@options.snapshot}"
+			ldir = @options.select
+			ldir = @config.get_client_incrementals(host, 0) if not ldir
 		elsif @options.update
 			bdir = @config.get_client_incrementals(host, 0)
+			ldir = @config.get_client_incrementals(host, 1)
 			bdir = get_backup_dirname if bdir.length == 0
-			ldir = "__none__"
 		else
 			bdir = get_backup_dirname
 			ldir = @config.get_client_incrementals(host, 0)
@@ -1382,6 +1396,7 @@ class Rubac
 
 		bdest = File.join(pdest, bdir)
 		ldest = File.join(pdest, ldir)
+		$msg.info "bdir=#{bdest} ldir=#{ldest}"
 
 		if @options.snapshot
 			if not File.exist?(ldest)
@@ -1390,7 +1405,7 @@ class Rubac
 			end
 		elsif @options.update
 			$msg.info "Running update on #{bdest}"
-			ldest = nil
+			ldest = nil if not File.exist?(ldest)
 		else
 			# move out incrementals
 			run_command_prep_linkdest(host, pdest) if ldir != "__none__"
@@ -1418,8 +1433,9 @@ class Rubac
 			# strip off any trailing path slashes
 			ifp = File.join(File.dirname(i), File.basename(i))
 			run_command_rsync(host, ifp, bdest, ldest)
-			@config.set_client_incremental(host, 0, bdir)
 		end
+
+		@config.set_client_incremental(host, 0, bdir) if not @options.snapshot
 
 		@config.save_xml if not @options.dry_run
 
@@ -1556,9 +1572,9 @@ class Rubac
 			break if name.length == 0
 			entries << name
 		end
-		#TODO Dir.chdir(get_client_dir(cli, false))
-		#TODO entries = Dir.glob('rubac.*')
-		#TODO entries.reverse
+
+		Dir.chdir(get_client_dir(cli, false))
+		entries << Dir.glob('rubac.snapshot.*')
 		entries
 	end
 
@@ -1785,17 +1801,17 @@ $msg = Msg.new("console")
 $signal_exit = false
 
 def trapSigTerm
-	$stderr << "TERM signal ignored"
+	$stderr << "\nTERM signal ignored\n"
 	$signal_exit = true
 end
 
 def trapSigInt
-	$stderr << "INT signal ignored"
+	$stderr << "\nINT signal ignored\n"
 	$signal_exit = true
 end
 
 def trapSigHup
-	$stderr << "HUP signal ignored"
+	$stderr << "\nHUP signal ignored\n"
 	$signal_exit = true
 end
 
