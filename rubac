@@ -40,8 +40,8 @@
 #   -H, --history[=INDEX]   Backup history, or specify index to see backup details
 #   -P, --prune             Delete the selected backup or snapshot (TODO) (default is the oldest)
 #       --select[=NAME]     TODO Select a backup for pruning or restoring
-#   -R, --restore=FILE      TODO Restore file as file[:index] if the incremental index is not given it defaults to most recent
-#       --restore-to=PATH   TODO Restore to the given base path (default is TMP)
+#   -R, --restore=FILE      TODO Restore file or directory, choose the backup with --select
+#       --restore-to=PATH   TODO Restore to the given host:path (default is client:/TMP)
 #       --restore-from=FILE TODO Restore file list from the given file (comma or new line delimited)
 #   -S, --search=GLOB       Search for the given glob in the backup history
 #
@@ -53,7 +53,7 @@
 #
 # == Examples
 #
-#   Setup and use a default backup
+# Setup and use a default backup
 #
 #   rubac -c esme -g -o "--acls --xattrs"
 #   rubac -c esme -i "/home/steeve,/home/lissa,/home/etienne" -x "*/.gvfs/"
@@ -64,9 +64,18 @@
 #   rubac -c esme --run
 #   rubac -c esme --update
 #
-#   List then show history of client esme using the esme profile
+# List then show history of client esme
 #   rubac -c esme --list compact
 #   rubac -c esme --history
+#
+# Search for all files named .bashrc
+#   rubac -c esme --search '.bashrc$'
+#
+# Restore all files named file.dat to the local tmp directory instead of esme:/tmp
+#   rubac -c esme --restore-to=localhost:/tmp --select rubac.2010-01-29_10-40-29 --restore file.dat
+#
+# Restore the directory /home/steeve/Desktop in place to esme:/
+#   rubac -c esme --restore-to=esme:/ --restore /home/steeve/Desktop/$
 #
 # == Environment Variables ==
 #
@@ -709,9 +718,11 @@ class Rubac
 			@sshopts["global"] = ENV['RUBAC_SSHOPTS']
 		else
 			@sshopts["global"] = "-a -v -v"
+			@sshopts["restore"] = "-a -v -v"
 		end
 		# don't --delete on update command, add this on run only
 		@sshopts["global"] << " --relative --delete-excluded --ignore-errors --one-file-system"
+		@sshopts["restore"] << " --relative --ignore-errors --one-file-system"
 		#@sshopts["global"] << " --acls"
 		#@sshopts["global"] << " --xattrs"
 
@@ -816,7 +827,7 @@ class Rubac
 			@options.tmp = Dir.tmpdir
 		end
 
-		@options.restore = nil
+		@options.restore = []
 		@options.restore_to = nil
 		@options.restore_from = nil
 
@@ -1032,6 +1043,11 @@ class Rubac
 		opts.on('-S', '--search glob', "Search backup history") do |glob|
 			set_command("search")
 			@options.search << glob
+		end
+
+		opts.on('R', '--restore PATH', "Restore file or directory, choose backup with --select, default is most recent") do |path|
+			set_command("restore")
+			@options.restore << path
 		end
 
 		opts.on('--restore-to PATH', "Restore to the given base path (default is TMP)") do |path|
@@ -1574,7 +1590,7 @@ class Rubac
 		end
 
 		Dir.chdir(get_client_dir(cli, false))
-		entries << Dir.glob('rubac.snapshot.*')
+		entries.concat(Dir.glob('rubac.snapshot.*'))
 		entries
 	end
 
@@ -1645,7 +1661,7 @@ class Rubac
 		hist = history_command_get_history(@client)
 
 		return if hist.nitems == 0
-		
+
 		@inodes = {}
 		@options.search.each do |glob|
 			hist.each_index do |i|
@@ -1667,9 +1683,7 @@ class Rubac
 
 		# setup flags for delete
 		rm_flags = { :force => true, :verbose => true }
-		if @options.dry_run 
-			rm_flags.merge!( :noop => true )
-		end
+		rm_flags.merge!( :noop => true ) if @options.dry_run 
 
 		j = hist.nitems-1
 		if index < j
@@ -1726,6 +1740,38 @@ class Rubac
 		prune_command_prune(@client, hist, index)
 	end
 
+	def restore_command
+		print_command
+
+		host = @client
+		host = nil if host == "localhost" or host == "127.0.0.1"
+
+		# @options.select may contain the backup source
+		if @options.select
+			source = @options.select
+		else
+			source = @config.get_client_incrementals(@client, 0)
+		end
+
+		dest = ""
+		if @options.restore_to
+			adest = @options.restore_to.split(":",2)
+			dest = host + ":" if adest.nitems == 1 and host
+			dest << @options.restore_to
+		else
+			dest = host + ":" if host
+			dest << @options.tmp
+		end
+
+		bsource = get_client_dir(@client, false, source)
+		$msg.info "cd #{bsource}"
+		Dir.chdir(bsource)
+		@options.restore.each do |restore|
+			cmd="rsync #{@sshopts["restore"]} #{restore[1..-1]} #{dest}"
+			$msg.info cmd
+		end
+	end
+
 	def version_command
 		ver = @config.version
 		$msg.puts "#{File.basename(__FILE__)} " + ver
@@ -1763,6 +1809,7 @@ class Rubac
 		$msg.warn "backup destination not set" if not File.exist?(@dest)
 
 		@sshopts["global"]  << " --dry-run" if @options.dry_run
+		@sshopts["restore"] << " --dry-run" if @options.dry_run
 
 		case @options.cmd
 		when "version_command"
@@ -1771,7 +1818,7 @@ class Rubac
 			eval @options.cmd
 		when "list_command", "history_command", "search_command"
 			process_command_clients
-		when "run_command", "snapshot_command", "prune_command"
+		when "run_command", "snapshot_command", "prune_command", "restore_command"
 			$msg.die "Must specify at least one client" if @options.all == true
 			process_command_clients
 		else
