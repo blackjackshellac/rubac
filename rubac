@@ -38,7 +38,8 @@
 #   -z, --compress          Compress the file data during backup
 #
 #   -H, --history[=INDEX]   Backup history, or specify index to see backup details
-#   -P, --prune[=NAME]      Delete the specified incremental backup, the default is the oldest
+#   -P, --prune             Delete the selected backup or snapshot (TODO) (default is the oldest)
+#       --select[=NAME]     TODO Select a backup for pruning or restoring
 #   -T, --restore-to=PATH   TODO Restore to the given base path (default is TMP)
 #   -R, --restore=FILE      TODO Restore file as file[:index] if the incremental index is not given it defaults to most recent
 #   -F, --restore-from=FILE TODO Restore file list from the given file (comma or new line delimited)
@@ -804,7 +805,7 @@ class Rubac
 		@options.email = nil
 		@options.smtp = nil
 		@options.hist_index = nil
-		@options.prune = nil
+		@options.select = nil
 		@options.address = nil
 		@options.search = []
 
@@ -1016,9 +1017,12 @@ class Rubac
 			@options.hist_index = index.to_i if index != nil
 		end
 
-		opts.on('-P', '--prune [NAME]', "Delete specified incremental backup") do |name|
+		opts.on('-P', '--prune', "Delete the selected backup or snapshot") do
 			set_command("prune")
-			@options.prune = name
+		end
+
+		opts.on('--select NAME', "Select a backup for pruning or restoring") do |name|
+			@options.select = name
 		end
 
 		opts.on('-S', '--search glob', "Search backup history") do |glob|
@@ -1689,23 +1693,19 @@ class Rubac
 			return
 		end
 
-		@options.prune = hist[hist.nitems-1] if @options.prune == nil
+		@options.select = hist[hist.nitems-1] if @options.select == nil
 
 		index = nil
 		hist.each_index do |i|
-			if hist[i] == @options.prune
+			if hist[i] == @options.select
 				index = i
 				break
 			end
 		end
 
-		if index == nil
-			$msg.err "Prune name #{@options.prune} not found"
-			$ret = 1
-			return
-		end
+		$msg.die "Selected backup #{@options.select} not found" if index == nil
 
-		$msg.info "Pruning #{hist[index]} with index=#{index}"
+		$msg.info "Deleting #{hist[index]} with index=#{index}"
 
 		prune_command_prune(@client, hist, index)
 	end
