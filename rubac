@@ -1753,6 +1753,13 @@ class Rubac
 			source = @config.get_client_incrementals(@client, 0)
 		end
 
+		if source.length == 0
+			$msg.err "nothing to restore for client=#{@client}"
+			return
+		end
+
+		$msg.debug "Backup source = #{source}"
+
 		dest = ""
 		if @options.restore_to
 			adest = @options.restore_to.split(":",2)
@@ -1765,11 +1772,23 @@ class Rubac
 
 		bsource = get_client_dir(@client, false, source)
 		$msg.info "cd #{bsource}"
+		# TODO check that bsource exists
 		Dir.chdir(bsource)
 		@options.restore.each do |restore|
 			cmd="rsync #{@sshopts["restore"]} #{restore[1..-1]} #{dest}"
+			p = IO.popen(cmd)
 			$msg.info cmd
-			$msg.info "\t#{File.join(bsource, restore)} => #{dest}"
+			while (line = p.gets)
+				line.chop!
+				out = File.join(dest, line)
+				if line[/\sis uptodate$/]
+					$msg.log out
+				elsif line[/#{restore[1..-1]}/]
+					$msg.info out
+				else
+					$msg.info ">#{line}"
+				end
+			end
 		end
 	end
 
