@@ -40,10 +40,10 @@
 #   -H, --history[=INDEX]   Backup history, or specify index to see backup details
 #   -P, --prune             Delete the selected backup or snapshot (TODO) (default is the oldest)
 #       --select[=NAME]     TODO Select a backup for pruning or restoring
-#   -R, --restore=FILE      TODO Restore file or directory, choose the backup with --select
+#   -R, --restore[=PATH]    TODO Restore path, choose the backup with --select
 #       --restore-to=PATH   TODO Restore to the given host:path (default is client:/TMP)
 #       --restore-from=FILE TODO Restore file list from the given file (comma or new line delimited)
-#   -S, --search=GLOB       Search for the given glob in the backup history
+#   -S, --search=GLOB       Search for the given glob in the backup history, optionally restore files found using restore without a path
 #
 #   -h, --help              Displays help
 #       --examples          Displays examples
@@ -76,6 +76,9 @@
 #
 # Restore the directory /home/steeve/Desktop in place to esme:/
 #   rubac -c esme --restore-to=esme:/ --restore /home/steeve/Desktop/$
+#
+# Search for all ogg vorbis files and restore them to /tmp
+#   rubac -c esme --restore --restore-to=/tmp --search '.*\.ogg'
 #
 # == Environment Variables ==
 #
@@ -828,6 +831,7 @@ class Rubac
 		end
 
 		@options.restore = []
+		@options.restore_search = false
 		@options.restore_to = nil
 		@options.restore_from = nil
 
@@ -1045,9 +1049,13 @@ class Rubac
 			@options.search << glob
 		end
 
-		opts.on('R', '--restore PATH', "Restore file or directory, choose backup with --select, default is most recent") do |path|
-			set_command("restore")
-			@options.restore << path
+		opts.on('R', '--restore [PATH]', "Restore file or directory, choose backup with --select, default is most recent") do |path|
+			if path
+				set_command("restore")
+				@options.restore << path
+			else
+				@options.search_restore = true
+			end
 		end
 
 		opts.on('--restore-to PATH', "Restore to the given base path (default is TMP)") do |path|
@@ -1637,7 +1645,7 @@ class Rubac
 				pbasedir = true
 			end
 
-			$msg.puts "\t#{fstat.ftype}=#{line}"
+			$msg.puts line
 			next if not @options.verbose
 
 			search_command_pp("type", fstat.ftype)
@@ -1658,7 +1666,11 @@ class Rubac
 	def search_command
 		print_command
 		hist = []
-		hist = history_command_get_history(@client)
+		if @options.select
+			hist << @options.select
+		else
+			hist = history_command_get_history(@client)
+		end
 
 		return if hist.nitems == 0
 
@@ -1786,7 +1798,7 @@ class Rubac
 				elsif line[/#{restore[1..-1]}/]
 					$msg.info out
 				else
-					$msg.info ">#{line}"
+					$msg.info "$#{line}"
 				end
 			end
 		end
