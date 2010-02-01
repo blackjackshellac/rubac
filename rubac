@@ -78,7 +78,7 @@
 #   rubac -c esme --restore-to=esme:/ --restore /home/steeve/Desktop/$
 #
 # Search for all ogg vorbis files and restore them to /tmp
-#   rubac -c esme --restore --restore-to=/tmp --search '.*\.ogg'
+#   rubac -c esme --restore --restore-to=/tmp --search 'caravan.palace'
 #
 # == Environment Variables ==
 #
@@ -831,7 +831,7 @@ class Rubac
 		end
 
 		@options.restore = []
-		@options.restore_search = false
+		@options.search_restore = false
 		@options.restore_to = nil
 		@options.restore_from = nil
 
@@ -1098,6 +1098,11 @@ class Rubac
 	end
 
 	def process_arguments_clients
+		#if @options.client[0] == "__all__"
+		#	@options.client = []
+		#	@options.client = @config.get_clients.keys
+		#	@options.all = false
+		#end
 		return if @options.client.nitems > 0
 		#@config.get_clients.each_key do |client|
 		#	@options.client << client
@@ -1105,6 +1110,29 @@ class Rubac
 		@options.client = @config.get_clients.keys
 		@options.all = true
 		$msg.debug "clients = #{@options.client.join(", ")}"
+	end
+
+	def check_backup_destination(dest)
+		if not File.exist?(File.join(dest, "rubac.init"))
+			$msg.die "destination #{dest} not initialized, mount or re-initialize with --dest #{dest}"
+		end
+		# TODO validate backup destination?
+		true
+	end
+
+	def initialize_backup_destination(dest)
+		begin
+		fd=File.new(File.join(dest, "rubac.init"), File::CREAT|File::RDWR|File::EXCL, 0600)
+		rescue Errno::EACCES
+			$msg.die "access denied, initializing destination #{dest}"
+		rescue Errno::EEXIST
+			$msg.warn "backup destination #{dest} is already initialized"
+			return true
+		rescue
+			$msg.die "initializing destination #{dest}"
+		end
+		fd.close
+		true
 	end
 
 	# Setup the arguments
@@ -1137,7 +1165,10 @@ class Rubac
 
 		version_command
 
-		@config.set_global_key_value("dest", @options.dest) if @options.dest
+		if @options.dest
+			initialize_backup_destination(@options.dest)
+			@config.set_global_key_value("dest", @options.dest)
+		end
 		@config.set_global_key_value("logname", @options.logname) if @options.logname
 		@config.set_global_key_value("logdir", @options.logdir) if @options.logdir
 		@config.set_global_key_value("smtp", @options.smtp) if @options.smtp
@@ -1613,9 +1644,9 @@ class Rubac
 		$msg.printf("%8s=#{fmt}\n", label, value)
 	end
 
-	def search_command_history(hist, glob)
+	def search_command_history(hist, pattern)
 
-		$msg.puts "Searching #{hist} for '#{glob}'"
+		$msg.puts "Searching #{hist} for '#{pattern}'"
 
 		pbasedir = false
 		basedir= get_client_dir(@client, false, hist)
@@ -1627,7 +1658,7 @@ class Rubac
 
 		log = File.open(logf) { |yf| YAML::load(yf) }
 		log.each do |line|
-			next if not line[/#{glob}/]
+			next if not line[/#{pattern}/i]
 			fpath = File.join(basedir, line)
 
 			if not File.exist?(fpath)
@@ -1675,9 +1706,9 @@ class Rubac
 		return if hist.nitems == 0
 
 		@inodes = {}
-		@options.search.each do |glob|
+		@options.search.each do |pattern|
 			hist.each_index do |i|
-				search_command_history(hist[i], glob)
+				search_command_history(hist[i], pattern)
 			end
 		end
 	end
@@ -1752,6 +1783,9 @@ class Rubac
 		prune_command_prune(@client, hist, index)
 	end
 
+	def restore_command_cmd(cmd)
+	end
+
 	def restore_command
 		print_command
 
@@ -1773,21 +1807,29 @@ class Rubac
 		$msg.debug "Backup source = #{source}"
 
 		dest = ""
-		if @options.restore_to
-			adest = @options.restore_to.split(":",2)
-			dest = host + ":" if adest.nitems == 1 and host
-			dest << @options.restore_to
-		else
-			dest = host + ":" if host
-			dest << @options.tmp
-		end
+
+		@options.restore_to = @options.tmp if not @options.restore_to
+
+		# restore_to can include a host [host:]/path
+		adest = @options.restore_to.split(":",2)
+		dest = host + ":" if adest.nitems == 1 and host
+		dest << @options.restore_to
 
 		bsource = get_client_dir(@client, false, source)
 		$msg.info "cd #{bsource}"
 		# TODO check that bsource exists
 		Dir.chdir(bsource)
-		@options.restore.each do |restore|
+
+		if @options.restore.nitems
 			cmd="rsync #{@sshopts["restore"]} #{restore[1..-1]} #{dest}"
+		elsif @options.restore_from
+			cmd = "rsync #{@sshopts["restore"]} --files-from=#{@options.restore_from} #{bsource} #{dest}"
+		else
+			$msg.die "nothing to restore"
+		end
+
+		if @options.restore.nitems > 0
+		@options.restore.each do |restore|
 			p = IO.popen(cmd)
 			$msg.info cmd
 			while (line = p.gets)
@@ -1801,6 +1843,8 @@ class Rubac
 					$msg.info "$#{line}"
 				end
 			end
+		end
+		elsif @options.restore_from
 		end
 	end
 
@@ -1838,7 +1882,11 @@ class Rubac
 	def process_command
 		@dest = @config.get_global_dest
 
-		$msg.warn "backup destination not set" if not File.exist?(@dest)
+		if @dest.length > 0
+			check_backup_destination(@dest)
+		else
+			$msg.warn "backup destination not set"
+		end
 
 		@sshopts["global"]  << " --dry-run" if @options.dry_run
 		@sshopts["restore"] << " --dry-run" if @options.dry_run
