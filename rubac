@@ -893,6 +893,8 @@ class Rubac
 	def set_command(c)
 		if @options.cmd == nil
 			@options.cmd="#{c}_command"
+		elsif @options.cmd[/^#{c}_command$/]
+			$msg.warn "Command \"#{c}\" already set"
 		else
 			$msg.warn "Command is already set to #{@options.cmd}, ignoring #{c} command"
 		end
@@ -982,10 +984,10 @@ class Rubac
 			@options.smtp = server
 		end
 
-		opts.on('-u', '--update', "Perform an update backup ignoring incrementals") {
+		opts.on('-u', '--update', "Perform an update backup ignoring incrementals") do
 			@options.update = true
 			set_command("run")
-		}
+		end
 
 		opts.on('-IN', '--incremental N', "Set the number of incremental backups") do |ninc|
 			ninc = ninc.to_i
@@ -1054,15 +1056,18 @@ class Rubac
 				set_command("restore")
 				@options.restore << path
 			else
+				$msg.info "Search results will be restored"
 				@options.search_restore = true
 			end
 		end
 
-		opts.on('--restore-to PATH', "Restore to the given base path (default is TMP)") do |path|
+		opts.on('--restore-to PATH', "Restore to the given base path (default is client:TMP)") do |path|
 			@options.restore_to = path
 		end
 
 		opts.on('--restore-from FILE', "Restore file list from the given file (comma or new line delimited)") do |file|
+			set_command("restore")
+			$msg.die "--restore-from #{file} not found" if not File.exist?(file)
 			@options.restore_from = file
 		end
 
@@ -1381,8 +1386,8 @@ class Rubac
 		Time.now.strftime(fmt)
 	end
 
-	def get_backup_dirname
-		"rubac." + date_time_str("%Y-%m-%d_%H-%M-%S")
+	def get_backup_dirname(name="rubac.", ext="")
+		name + date_time_str("%Y-%m-%d_%H-%M-%S") + ext
 	end
 
 	def get_client_dir(host, create=false, backup=nil, path=nil)
@@ -1676,6 +1681,8 @@ class Rubac
 				pbasedir = true
 			end
 
+			@options.restore << line if @options.search_restore
+
 			$msg.puts line
 			next if not @options.verbose
 
@@ -1692,6 +1699,7 @@ class Rubac
 			search_command_pp("ino", fstat.ino)
 		end
 
+		restore_command if @options.search_restore
 	end
 
 	def search_command
@@ -1784,6 +1792,39 @@ class Rubac
 	end
 
 	def restore_command_cmd(cmd)
+		$msg.info "cmd=#{cmd}"
+	end
+
+	def restore_command_validate_restore_from(path)
+		lines = []
+		File.open(path, 'r').each_line do |line|
+			line.chop!
+			line.split(",").each do |l|
+				l.strip!
+				# skip comments
+				next if l[0].chr == "#"
+				# restore paths must be absolute
+				next if l[0].chr != "/"
+				$msg.info "restoring #{l}"
+				lines << l
+			end
+		end
+		$msg.warn "restore-from #{path} is empty" if lines.nitems == 0
+		lines
+	end
+
+	def restore_command_write_restore_from(restore)
+		path = File.join(@options.tmp, get_backup_dirname("rubac.restore_from.", ".dat"))
+		File.open(path, 'w') do |fd|
+			restore.each do |line|
+				line.split(",").each do |l|
+					l.strip!
+					fd.puts(l)
+					$msg.info "#{l} >> #{path}"
+				end
+			end
+		end
+		path
 	end
 
 	def restore_command
@@ -1820,31 +1861,33 @@ class Rubac
 		# TODO check that bsource exists
 		Dir.chdir(bsource)
 
-		if @options.restore.nitems
-			cmd="rsync #{@sshopts["restore"]} #{restore[1..-1]} #{dest}"
-		elsif @options.restore_from
-			cmd = "rsync #{@sshopts["restore"]} --files-from=#{@options.restore_from} #{bsource} #{dest}"
-		else
-			$msg.die "nothing to restore"
+		if @options.restore.nitems > 0
+			@options.restore_from = restore_command_write_restore_from(@options.restore)
+			#cmd="rsync #{@sshopts["restore"]} #{restore[1..-1]} #{dest}"
+		elsif @options.restore_from.length > 0
+			restore_command_validate_restore_from(@options.restore_from)
+		else # @options.restore_from.length == 0
+			$msg.err "nothing to restore"
+			$ret = 1
+			return
 		end
 
-		if @options.restore.nitems > 0
-		@options.restore.each do |restore|
-			p = IO.popen(cmd)
-			$msg.info cmd
-			while (line = p.gets)
-				line.chop!
-				out = File.join(dest, line)
-				if line[/\sis uptodate$/]
-					$msg.log out
-				elsif line[/#{restore[1..-1]}/]
-					$msg.info out
-				else
-					$msg.info "$#{line}"
-				end
+		cmd = "rsync #{@sshopts["restore"]} --files-from=#{@options.restore_from} #{bsource} #{dest}"
+		$msg.info cmd
+
+		p = IO.popen(cmd)
+		while (line = p.gets)
+			line.chop!
+			out = File.join(dest, line)
+			if line[/\sis uptodate$/]
+				$msg.log out
+			elsif line[/\/$/]
+				lastdir=line
+			elsif lastdir and line[/^#{lastdir}/]
+				$msg.info out
+			else
+				$msg.info "$#{line}"
 			end
-		end
-		elsif @options.restore_from
 		end
 	end
 
@@ -1890,6 +1933,10 @@ class Rubac
 
 		@sshopts["global"]  << " --dry-run" if @options.dry_run
 		@sshopts["restore"] << " --dry-run" if @options.dry_run
+
+		# TODO @cmdptr = method( :help_command ) 
+		# execute with
+		# @cmdptr.call
 
 		case @options.cmd
 		when "version_command"
