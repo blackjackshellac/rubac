@@ -1148,25 +1148,29 @@ class Rubac
 
 		# setup logging immediately after loading the configuration
 		if @options.logdir == nil
-			@options.logdir = @config.get_global_key_value("logdir")
-			if @options.logdir.length == 0
+			logdir = @config.get_global_key_value("logdir")
+			if logdir.length == 0
 				if Process.uid == 0
-					@options.logdir = "/var/log/rubac"
+					logdir = "/var/log/rubac"
 				else
-					@options.logdir = "#{@options.tmp}/rubac"
+					logdir = "#{@options.tmp}/rubac"
 				end
 			end
+		else
+			logdir = @options.logdir
 		end
 
 		if @options.logname == nil
-			@options.logname = @config.get_global_key_value("logname")
-			if @options.logname.length == 0
-				@options.logname = "#{@options.profile}.#{date_time_str(@options.logfmt)}.log"
+			logname = @config.get_global_key_value("logname")
+			if logname.length == 0
+				logname = "#{@options.profile}.#{date_time_str(@options.logfmt)}.log"
 			end
+		else
+			logname = @options.logname
 		end
 
-		$msg.debug "log=#{@options.logdir}/#{@options.logname}"
-		$msg.privlog(@options.logname, @options.logdir, 0600)
+		$msg.debug "log=#{logdir}/#{logname}"
+		$msg.privlog(logname, logdir, 0600)
 
 		version_command
 
@@ -1431,6 +1435,7 @@ class Rubac
 			ldir = @config.get_client_incrementals(host, 0) if not ldir
 		elsif @options.update
 			bdir = @config.get_client_incrementals(host, 0)
+			# TODO should I set ldir for update?
 			ldir = @config.get_client_incrementals(host, 1)
 			bdir = get_backup_dirname if bdir.length == 0
 		else
@@ -1935,8 +1940,8 @@ class Rubac
 		@sshopts["restore"] << " --dry-run" if @options.dry_run
 
 		# TODO @cmdptr = method( :help_command ) 
-		# execute with
-		# @cmdptr.call
+		# TODO execute with
+		# TODO @cmdptr.call
 
 		case @options.cmd
 		when "version_command"
