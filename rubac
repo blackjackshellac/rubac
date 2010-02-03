@@ -39,10 +39,10 @@
 #
 #   -H, --history[=INDEX]   Backup history, or specify index to see backup details
 #   -P, --prune             Delete the selected backup or snapshot (TODO) (default is the oldest)
-#       --select[=NAME]     TODO Select a backup for pruning or restoring
-#   -R, --restore[=PATH]    TODO Restore path, choose the backup with --select
-#       --restore-to=PATH   TODO Restore to the given host:path (default is client:/TMP)
-#       --restore-from=FILE TODO Restore file list from the given file (comma or new line delimited)
+#       --select[=NAME]     TODO Select a backup for pruning or restoring (special names: latest, oldest)
+#   -R, --restore[=PATH]    Restore path, choose the backup with --select
+#       --restore-to=PATH   Restore to the given host:path (default is client:/TMP)
+#       --restore-from=FILE Restore file list from the given file (comma or new line delimited)
 #   -S, --search=GLOB       Search for the given glob in the backup history, optionally restore files found using restore without a path
 #
 #   -h, --help              Displays help
@@ -1120,6 +1120,7 @@ class Rubac
 	def check_backup_destination(dest)
 		if not File.exist?(File.join(dest, "rubac.init"))
 			$msg.die "destination #{dest} not initialized, mount or re-initialize with --dest #{dest}"
+			false
 		end
 		# TODO validate backup destination?
 		true
@@ -1854,7 +1855,7 @@ class Rubac
 
 		dest = ""
 
-		@options.restore_to = @options.tmp if not @options.restore_to
+		@options.restore_to = File.join(@options.tmp, "rubac", @client) if not @options.restore_to
 
 		# restore_to can include a host [host:]/path
 		adest = @options.restore_to.split(":",2)
@@ -1893,6 +1894,16 @@ class Rubac
 			else
 				$msg.info "$#{line}"
 			end
+		end
+		## TODO get status of command??
+		status=$?
+		p status
+		#out = %x{#{cmd}}
+		#status = $?.exitstatus
+		#$msg.info out
+		if status and status != 0
+			$msg.err "running command %Q(#{cmd})"
+			exit(status)
 		end
 	end
 
@@ -1939,9 +1950,9 @@ class Rubac
 		@sshopts["global"]  << " --dry-run" if @options.dry_run
 		@sshopts["restore"] << " --dry-run" if @options.dry_run
 
-		# TODO @cmdptr = method( :help_command ) 
-		# TODO execute with
-		# TODO @cmdptr.call
+		#TODO @cmdptr = method( :help_command ) 
+		#TODO execute with
+		#TODO @cmdptr.call
 
 		case @options.cmd
 		when "version_command"
