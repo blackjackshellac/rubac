@@ -93,6 +93,7 @@
 #   Steeve McCauley
 #
 # == Copyright
+#
 #   Copyright (c) 2009 Steeve McCauley. Licensed under the GPL
 #
 #   This program is free software: you can redistribute it and/or modify
@@ -108,10 +109,8 @@
 #   You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-# $Id$
 
 require 'optparse' 
-require 'rdoc/usage'
 require 'net/smtp'
 require 'ostruct'
 require 'date'
@@ -144,6 +143,59 @@ CONFIG_KEY_SMTP="smtp"
 
 UPDATE_CMD_ADD="add"
 UPDATE_CMD_DEL="delete"
+
+class HeaderHelp
+	attr_reader :sections
+
+	def initialize(file)
+		@sections=Hash.new { |h,k| h[k]=[] }
+
+		File.open(file, 'r') { |f|
+			section=nil
+			f.each_line { |line|
+				#line.chomp!
+				next unless line[/^#([^!].*)/]
+				line=$1
+				if line[/\s+==\s+(.*?)\s*=*\s*$/]
+					section=$1
+					#puts  "New section: #{section}"
+				end
+				next if section.nil?
+				@sections[section] << line
+			}
+		}
+	end
+
+	def list
+		@sections.each { |k,v| puts "key="+k }
+	end
+
+	def print(secs)
+		case secs
+		when Array
+			print_array(secs)
+		when String
+			print_section(secs)
+		end
+	end
+
+	private
+
+	def print_section(section)
+		return unless @sections.has_key?(section)
+		@sections[section].each { |line| puts line }
+	end
+
+	def print_array(secs)
+		secs.each { |s|
+			print_section(s)
+		}
+	end
+end
+
+$help=HeaderHelp.new($0)
+#puts $help.list
+#$help.print([ "Synopsis", "Usage", "Examples", "Environment Variables" ])
 
 # create a stack with a limited number of entries
 class Stack
@@ -264,7 +316,7 @@ class MsgObject
 	end
 
 	def << (msg)
-		msg.each do |line|
+		msg.each_line do |line|
 			line.chomp!
 			@io << timestamp if @datefmt
 			@io << line + "\n"
@@ -331,7 +383,7 @@ private
 		# notification
 		puts "Unknown message level=%{lvl}" if not $LOGLEVELS.has_key?(lvl)
 		return if $LOGLEVELS[lvl].to_i > @loglevel
-		msg.each do |line|
+		msg.each_line do |line|
 			@console << line if @console
 			@notify << line if @notify
 			# only print blank lines to console
@@ -1112,6 +1164,7 @@ class Rubac
 
 		opts.on('-h', '--help',    "Print help") do   #   { output_help }
 			set_command("help")
+			#puts opts.to_s
 		end
 
 		opts.on('--examples', "Display examples") do
@@ -1358,15 +1411,19 @@ class Rubac
 
 	def help_command 
 		# RDoc::usage doesn't work in 1.9.x
-		RDoc::usage('Synopsis', 'Usage', 'Options') #exits app
+		#RDoc::usage('Synopsis', 'Usage', 'Options') #exits app
+		puts "Am I here?"
+		$help.print([ "Synopsis", "Usage", "Options" ])
 	end
     
 	def usage_command
-		RDoc::usage('Synopsis', 'Usage', 'Options') # gets usage from comments above
+		#RDoc::usage('Synopsis', 'Usage', 'Options') # gets usage from comments above
+		$help.print([ "Synopsis", "Usage", "Examples", "Environment Variables" ])
 	end
 
 	def examples_command
-		RDoc::usage('Examples')
+		#RDoc::usage('Examples')
+		$help.print("Examples")
 	end
  
 	def run_command_prep_linkdest(host, pdest)
