@@ -11,39 +11,39 @@
 #
 # == Options
 #   -g, --global            Apply includes, excludes, options etc., to global settings 
-#   -p, --profile=NAME      Name of backup profile (default is rubac)
-#   -D, --datadir=PATH      Configuration directory (if root /etc/rubac otherwise ~/.rubac)
+#   -p, --profile [NAME]    Name of backup profile (default is rubac), list profiles without NAME
+#   -D, --datadir PATH      Configuration directory (if root /etc/rubac otherwise ~/.rubac)
 #
-#   -c, --client=HOST       Client to backup (default is localhost), can specify multiple clients
-#   -a, --address=HOST      Set the client host address (default is the client name)
-#   -i, --include=PATH      Include path, comma separate multiple paths
-#   -x, --exclude=PATH      Exclude path, comma separate multiple paths
-#   -o, --opts=OPTS         Extra rsync options
+#   -c, --client HOST       Client to backup (default is localhost), can specify multiple clients
+#   -a, --address HOST      Set the client host address (default is the client name)
+#   -i, --include PATH      Include path, comma separate multiple paths
+#   -x, --exclude PATH      Exclude path, comma separate multiple paths
+#   -o, --opts OPTS         Extra rsync options
 #       --delete            Delete any specified includes, excludes, opts
 #       --delete [client]   Delete the specified client configuration (does not purge the backups)
-#   -d, --dest=DEST         Local destination path (eg., /mnt/backup)
-#   -m, --mail=EMAIL        TODO Notification email, comma separated list
-#       --smtp=SERVER       TODO IP Address of smtp server (default is localhost)
+#   -d, --dest DEST         Local destination path (eg., /mnt/backup)
 #
-#   -L, --logdir=PATH       Directory for logging (root default is /var/log/rubac, otherwise TMP/rubac)
-#       --log[=NAME]        Name of log file, (default is profile.%Y-%m-%d.log)
-#   -y, --syslog            TODO Use syslog for logging [??]
+#   -L, --logdir PATH       Directory for logging (root default is /var/log/rubac, otherwise TMP/rubac)
+#       --log [NAME]        TODO Name of log file, (default is rubac.%Y-%m-%d.log)  - allow date/time formats 
+#   -m, --mail EMAIL        Notification email, comma separated list
+#       --smtp SERVER       IP Address of smtp server (default is localhost)
+#   -y, --syslog            TODO Use syslog for logging [??] [probably not since we have privlog]
 #
 #   -l, --list [compact]    List the includes, excludes, etc., for the named profile
 #   -u, --update            Perform update backup, no incremental backups
-#   -I, --incremental[=N]   Number of incremental backups (default is 5)
+#   -I, --incremental NUM   Number of incremental backups (default is 5)
 #   -r, --run               Run specified profile
-#   -s, --snapshot=NAME     Created a snapshot based on most recent backup
+#   -s, --snapshot NAME     Created a snapshot based on most recent backup
 #   -n, --dry-run           Perform a trial run of the backup
 #   -z, --compress          Compress the file data during backup
 #
-#   -H, --history[=INDEX]   Backup history, or specify index to see backup details
-#   -P, --prune             Delete the selected backup or snapshot (TODO) (default is the oldest)
-#       --select[=NAME]     TODO Select a backup for pruning or restoring (special names: latest, oldest)
-#   -R, --restore[=PATH]    Restore path, choose the backup with --select
-#       --restore-to=PATH   Restore to the given host:path (default is client:/TMP)
-#       --restore-from=FILE Restore file list from the given file (comma or new line delimited)
-#   -S, --search=GLOB       Search for the given glob in the backup history, optionally restore files found using restore without a path
+#   -H, --history [INDEX]   Backup history, or specify index to see backup details
+#   -P, --prune             Delete the selected backup or snapshot (TODO)
+#       --select [NAME]     TODO Select a backup for pruning or restoring (special names: newest, oldest)
+#   -R, --restore [PATH]    Restore path, choose the backup with --select
+#       --restore-to PATH   Restore to the given host:path (default is client:/TMP)
+#       --restore-from FILE Restore file list from the given file (comma or new line delimited)
+#   -S, --search PATTERN    Search for the given glob in the backup history, optionally restore files found using restore without a path
 #
 #   -h, --help              Displays help
 #       --examples          Displays examples
@@ -116,10 +116,10 @@ require 'net/smtp'
 require 'ostruct'
 require 'date'
 require 'socket'
+require 'etc'
 require 'tmpdir'
 require 'open3'
-
-require 'xmlsimple'
+require 'yaml'
 
 require 'net/smtp'
 require 'rbconfig'	# ruby config
@@ -145,9 +145,32 @@ CONFIG_KEY_SMTP="smtp"
 UPDATE_CMD_ADD="add"
 UPDATE_CMD_DEL="delete"
 
-class Email
+# create a stack with a limited number of entries
+class Stack
+	attr_reader :elements
 
-	attr_accessor :server
+	def initialize(elements)
+		@elements = elements
+		@stack = Array.new
+	end
+
+	def push(item)
+		return if item.nil?
+		@stack.delete_at(0) if @elements and @stack.length == @elements
+		@stack.push(item)
+	end
+
+	def pop
+		@stack.pop
+	end
+
+	def each
+		@stack.each { |item| yield item }
+	end
+end
+
+class Email
+	attr :server, true
 
 	def initialize(server="localhost")
 		@server=server
@@ -172,7 +195,9 @@ class Email
 		@from = address_email(addr, name)
 	end
 
-	def send(subject, body, server='localhost')
+	def send(subject, body, server=nil)
+		@server = server if server != nil
+
 		tstr = ""
 		@to.each do |a|
 			tstr << "#{a[:name]} " if a[:name]
@@ -188,15 +213,22 @@ class Email
 From: #{fstr}
 To: #{tstr}
 Subject: #{sstr}
- 
-#{body}
+
+\n#{body}
 END_OF_MESSAGE
  
-		@to.each { |a|
-		Net::SMTP.start(server) do |smtp|
-			smtp.send_message msg, @from[:addr], a[:addr]
+		@to.each do |a|
+			#puts "Sending message to #{a[:addr]}\n" + msg
+			begin
+				Net::SMTP.start(@server) do |smtp|
+					smtp.send_message msg, @from[:addr], a[:addr]
+				end
+			rescue Errno::ECONNREFUSED
+				puts "Connection to smtp server #{@server} refused"
+			rescue
+				puts "Failed to send msg to smtp server #{@server}"
+			end
 		end
-		}
 	end
 end
 
@@ -211,12 +243,17 @@ $LOGLEVELS = {	"emerg"  => 0,
 
 class MsgObject
 	attr :client, true
+	attr_reader :io
 
 	def initialize(name, handle, datefmt=nil, sync=false)
 		@name = name
-		@io = handle
+		if handle
+			@io = handle
+		else
+			@io = String.new
+		end
 		@datefmt = datefmt
-		@io.sync = sync if @io.class == File
+		@io.sync = true if @io.class == File
 
 		@client = "localhost"
 		@loglevel = $LOGLEVELS["info"]
@@ -232,6 +269,19 @@ class MsgObject
 			@io << timestamp if @datefmt
 			@io << line + "\n"
 		end
+	end
+
+	# don't add CR to message
+	def print(msg)
+		@io << msg
+	end
+
+	def printf(fmt, *args)
+		@io << sprintf(fmt, *args)
+	end
+
+	def empty
+		@io = ""
 	end
 end
 
@@ -254,6 +304,7 @@ class Msg
 		@syslog = nil 
 		@privlog = nil
 		@notify = nil
+		@email = nil
 
 		@datefmt = "%b %d %H:%M:%S"
 
@@ -266,10 +317,6 @@ class Msg
 			case d
 			when 'console'
 				@console = MsgObject.new("console", $stdout, nil, true)
-			when 'syslog'
-				@syslog = true
-			when 'notify'
-				@notify = MsgObject.new("notify", notify_buffer, nil, false)
 			else
 				puts "Unknown log destination \"#{d}\" in #{me}"
 			end
@@ -277,7 +324,7 @@ class Msg
 		# default log level
 	end
 private
-	def MLmessage(msg, lvl)
+	def msgMessage(msg, lvl)
 		# console
 		# syslog
 		# private log
@@ -286,11 +333,11 @@ private
 		return if $LOGLEVELS[lvl].to_i > @loglevel
 		msg.each do |line|
 			@console << line if @console
+			@notify << line if @notify
 			# only print blank lines to console
 			next if line.length == 1
 			@privlog << line if @privlog
 		end
-		#msg_buffer << msg if @notify
 	end
 public
 	def set_client(client="localhost")
@@ -324,6 +371,31 @@ public
 		@privlog = MsgObject.new("privlog", privlog, @datefmt, false) if privlog
 	end
 
+	def privlog_path
+		@privlog ? @privlog.io.path : ""
+	end
+
+	# email notify
+	# MsgObject.notify("me@somewhere.com", "My Name", "root@localhost", "Rubac backup")
+	def notify(to_addr, from_addr="rubac@localhost", server="localhost")
+		#@notify = MsgObject.new("notify", nil, @datefmt, false) if @notify == nil
+		@notify = MsgObject.new("notify", nil, nil, false) if @notify == nil
+
+		@email = Email.new(server)
+		@email.to(to_addr)
+		@email.from(from_addr)
+	end
+
+	def send_notify(subject="Rubac notification")
+		return if @notify == nil
+		#$msg.puts "!!!!!\nsubject=#{subject}\nbuffer=#{@notify.io}\n!!!!!"
+		return if @notify.io.class != String
+		return if @notify.io.length == 0
+		@email.send(subject, @notify.io)
+		# TODO if successful clear buffer
+		@notify.empty	
+	end
+
 	def level(lvl)
 		if $LOGLEVELS[lvl].has_key?
 			@loglevel = $LOGLEVELS[lvl]
@@ -334,23 +406,23 @@ public
 	end
 
 	def info(msg)
-		MLmessage(msg, "info")
+		msgMessage(msg, "info")
 	end
 
 	def warn(msg)
-		MLmessage("Warning: " + msg, "warn")
+		msgMessage("Warning: " + msg, "warn")
 	end
 
 	def err(msg)
-		MLmessage("Error: " + msg, "err")
+		msgMessage("Error: " + msg, "err")
 	end
 
 	def debug(msg)
-		MLmessage("Debug: " + msg, "debug")
+		msgMessage("Debug: " + msg, "debug")
 	end
 
 	def alert(msg)
-		MLmessage("Alert: " + msg, "alert")
+		msgMessage("Alert: " + msg, "alert")
 	end
 
 	def die(msg, e=1)
@@ -359,11 +431,22 @@ public
 	end
 
 	def printf(fmt, *args)
-		$stdout << sprintf(fmt, *args)
+		#$stdout << sprintf(fmt, *args)
+		#@console << msg if @console
+		#@notify << msg if @notify
+		@console.printf(fmt, *args) if @console
+		@notify.printf(fmt, *args) if @notify
 	end
 
 	def puts(msg)
-		$stdout << msg + "\n"
+		#$stdout << msg + "\n"
+		@console << msg if @console
+		@notify << msg if @notify
+	end
+
+	def print(msg)
+		@console.print(msg) if @console
+		@notify.print(msg) if @notify
 	end
 
 	def log(msg)
@@ -376,6 +459,8 @@ end
 #
 
 class Config_rubac
+	attr_reader :config
+
 	#
 	# configuration template hash
 	#
@@ -410,6 +495,8 @@ class Config_rubac
 			}
 		}
 		@config = {}
+		@config['globals'] = @def_config['globals']
+		@config['clients'] = {}
 	end
 
 	def version
@@ -427,31 +514,35 @@ class Config_rubac
 		@config['globals']['version'] = ver
 	end
 
-	# load the xml config
-	def load_xml(file, path="./")
-		@xml_file = File.join(path, file)
-		if File.exist?(@xml_file)
-			@config = XmlSimple.xml_in(@xml_file, 'ForceArray' => false)
-		else
-			$msg.warn "Config #{@xml_file} not found, using default"
-			@config = @def_config.to_hash
-		end
-		$msg.debug "##### load_xml #{@xml_file}"
-		$msg.debug "YAML.dump=" + YAML.dump(@config) + "\n"
-
-		align_version
+	def dump
+		$msg.info "YAML.dump=" + YAML.dump(@config) + "\n"
 	end
 
-	# save the xml config
-	def save_xml
-		out = XmlSimple.xml_out(@config, { 'RootName' => 'rubac_config', 'NoAttr' => true, 'AttrPrefix' => true } )
-		xml="<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n" + out
+	def load(file, dir)
+		input = File.join(dir, file)
+		if not File.exist?(input)
+			$msg.warn "configuraton file #{file} not found"
+			return false
+		end
+		@config = File.open(input) { |yf| YAML::load(yf) }
+		align_version
+		return true
+	end
 
-		file = File.new(@xml_file, "w")
-		file << xml
-		file.close
+	def save_yaml(output)
+		File.open(output, "w" ) do |out|
+			YAML.dump( @config, out )
+		end
+	end
 
-		xml
+	def save(file, dir)
+		output=File.join(dir, file)
+		$msg.info "Saving #{output}"
+		if output[/\.yaml$/]
+			save_yaml(output)
+		else
+			$msg.die "unknown file type #{output} in config save"
+		end
 	end
 
 	def add_client(host)
@@ -466,22 +557,23 @@ class Config_rubac
 		@config['clients'].delete(host)
 	end
 
-	def get_config
-		@config.to_hash
-	end
-
 	def get_global_config
 		@config['globals'].to_hash
 	end
 
-	def del_global_key(key, val, delim=",")
+	def del_global_key(key, val, delim=nil)
 		return if val == nil or val.length == 0
 
 		return if not @config['globals'].has_key?(key)
 
+		if not delim
+			@config['globals'].delete(key)
+			return
+		end
+
 		items = []
 		items = @config['globals']["#{key}"].split(delim)
-		return if items.nitems == 0
+		return if items.length == 0
 
 		vals = val.split(delim)
 		vals.each { |k|
@@ -491,48 +583,41 @@ class Config_rubac
 		@config['globals']["#{key}"] = items.join(delim)
 	end
 
-	def add_global_key(key, val, delim=",")
+	def add_global_key(key, val, delim=nil)
 		return if val == nil or val.length = 0
+
+		if not delim
+			items=@config['globals']["#{key}"] = val
+			return
+		end
 		# val can be a comma separated list, should convert to array
 		# and compare all values of the with all values in vals below
 		vals = val.split(delim)
 		vals.each { |k| k.strip! }
 		
 		items = []
-		if @config['globals']["#{key}"].split(delim).length > 0
-			items=@config['globals']["#{key}"].split(delim)
-		end
+		items=@config['globals']["#{key}"].split(delim) if @config['globals']["#{key}"].length > 0
 		# merge, removing duplicates
 		items = items | vals
 		@config['globals']["#{key}"] = items.join(delim)
 	end
 
-	# type is add/delete
-	def global_updates(type, inc, exc, opts)
-		if type == UPDATE_CMD_DEL
-			del_global_key("includes", inc)
-			del_global_key("excludes", exc)
-			del_global_key("opts", opts, " ")
+	def global_update(cmd, key, value, delim=nil)
+		return if not value
+		value = value.to_s if value.class != String
+		case cmd
+		when UPDATE_CMD_DEL
+			msg = "Deleting"
+			del_global_key(key, value, delim)
+		when UPDATE_CMD_ADD
+			msg = "Adding"
+			add_global_key(key, value, delim)
 		else
-			add_global_key("includes", inc)
-			add_global_key("excludes", exc)
-			add_global_key("opts", opts, " ")
+			$msg.err "Unknown command in global_update: #{cmd}"
+			return 1
 		end
-	end
-
-	# add the specified includes to the global include list
-	def add_global_includes(inc)
-		global_updates(UPDATE_CMD_ADD, "includes", inc, nil, nil)
-	end
-
-	# add the specified excludes to the global exclude list
-	def add_global_excludes(exc)
-		global_updates(UPDATE_CMD_ADD, "excludes", nil, exc, nil)
-	end
-
-	# add the specified opts to the global opts list
-	def add_global_opts(opts)
-		global_updates(UPDATE_CMD_ADD, "excludes", nil, nil, opts)
+		$msg.info msg + " #{key}=#{value}"
+		return 0
 	end
 
 	def get_global_key_value(key, default = "")
@@ -584,15 +669,20 @@ class Config_rubac
 		@config['clients']["#{host}"]['incrementals']["#{n}"].to_s
 	end
 
-	def del_client_key(host, key, val, delim=",")
+	def del_client_key(host, key, val, delim=nil)
 		return if val == nil or val.length == 0
 		get_client_config(host)
 
 		return if not @config['clients']["#{host}"].has_key?(key)
 
+		if not delim
+			@config['clients']["#{host}"].delete(key)
+			return
+		end
+
 		items = []
 		items = @config['clients']["#{host}"]["#{key}"].split(delim)
-		return if items.nitems == 0
+		return if items.length == 0
 
 		vals = val.split(delim)
 		vals.each { |k|
@@ -603,11 +693,17 @@ class Config_rubac
 	end
 
 	# append (or set) the specified key for the specified client
-	def add_client_key(host, key, val, delim=",")
+	def add_client_key(host, key, val, delim=nil)
 		return if val == nil or val.length == 0
 
 		get_client_config(host)
-		# val can be a comma separated list, should convert to array
+
+		if not delim
+			@config['clients']["#{host}"]["#{key}"] = val
+			return
+		end
+
+		# val can be a delimite4d separated list, should convert to array
 		# and compare all values of the with all values in vals below
 		vals = val.split(delim)
 		vals.each { |k| k.strip! }
@@ -621,32 +717,33 @@ class Config_rubac
 	end
 
 	# type is add/delete
-	def client_updates(host, type, inc, exc, opts)
-		if type == UPDATE_CMD_DEL
-			del_client_key(host, "includes", inc)
-			del_client_key(host, "excludes", exc)
-			del_client_key(host, "opts", opts, " ")
+	#def client_updates(host, type, inc, exc, opts)
+	#	if type == UPDATE_CMD_DEL
+	#		del_client_key(host, "includes", inc)
+	#		del_client_key(host, "excludes", exc)
+	#		del_client_key(host, "opts", opts, " ")
+	#	else
+	#		add_client_key(host, "includes", inc)
+	#		add_client_key(host, "excludes", exc)
+	#		add_client_key(host, "opts", opts, " ")
+	#	end
+	#end
+
+	# update (add or del) a key/value setting
+	def client_update(host, cmd, key, value, delim=nil)
+		return if not value
+		value = value.to_s if value.class != String
+		case cmd
+		when UPDATE_CMD_DEL
+			msg="Deleting"
+			del_client_key(host, key, value, delim)
+		when UPDATE_CMD_ADD
+			msg="Adding"
+			add_client_key(host, key, value, delim)
 		else
-			add_client_key(host, "includes", inc)
-			add_client_key(host, "excludes", exc)
-			add_client_key(host, "opts", opts, " ")
+			$msg.err "Unknown command in client_update: #{cmd}"
 		end
-	end
-
-
-	# append (or set) includes for specified client
-	def add_client_includes(host, inc)
-		add_client_key(host, "includes", inc)
-	end
-
-	# append (or set) excludes for specified client
-	def add_client_excludes(host, exc)
-		add_client_key(host, "excludes", exc)
-	end
-
-	# append (or set) opts for specified client
-	def add_client_opts(host, opts)
-		add_client_key(host, "opts", opts, " ")
+		$msg.info msg + " #{key}=#{value}"
 	end
 
 	def get_clients
@@ -721,11 +818,13 @@ class Rubac
 			@sshopts["global"] = ENV['RUBAC_SSHOPTS']
 		else
 			@sshopts["global"] = "-a -v -v"
-			@sshopts["restore"] = "-a -v -v"
+			@sshopts["restore"] = "-a -r -v -v"
 		end
 		# don't --delete on update command, add this on run only
+		#@sshopts["global"] << " --relative --delete-excluded --ignore-errors --one-file-system"
+		#@sshopts["restore"] << " --relative --ignore-errors --one-file-system"
 		@sshopts["global"] << " --relative --delete-excluded --ignore-errors --one-file-system"
-		@sshopts["restore"] << " --relative --ignore-errors --one-file-system"
+		@sshopts["restore"] << " --relative --one-file-system"
 		#@sshopts["global"] << " --acls"
 		#@sshopts["global"] << " --xattrs"
 
@@ -747,7 +846,7 @@ class Rubac
 		@options.ninc = nil	# means 5 incrementals, 1-5 with main backup 0
 		
 		if ENV['RUBAC_PROFILE'] and ENV['RUBAC_PROFILE'].length > 0
-			@options.profile = File.basename(ENV['RUBAC_PROFILE'], ".xml")
+			@options.profile = File.basename(ENV['RUBAC_PROFILE'], ".yaml")
 		else
 			@options.profile = "rubac"
 		end
@@ -805,8 +904,8 @@ class Rubac
 		@options.quiet = false
 		@options.update_cmd = UPDATE_CMD_ADD
 		@options.delete_client = []
-		@options.include = nil
-		@options.exclude = nil
+		@options.includes = nil
+		@options.excludes = nil
 		@options.dest = nil
 		@options.opts = nil
 		@options.snapshot = nil
@@ -952,19 +1051,19 @@ class Rubac
 
 		opts.on('-iPATH', '--include PATH', "Add include path") do |inc|
 			delim=","
-			@options.include = parse_option_list(@options.include, inc, delim) 
+			@options.includes = parse_option_list(@options.includes, inc, delim) 
 			# remove trailing pathslash, if any
 			#inc = File.join(File.dirname(inc), File.basename(inc))
-			opts = @options.include.split(delim)
+			opts = @options.includes.split(delim)
 			opts.each do |o|
 				next if o == '/'
 				o.sub!(/\/$/, "")
 			end
-			@options.include = opts.join(delim)
+			@options.includes = opts.join(delim)
 		end
 
 		opts.on('-xPATH', '--exclude PATH', "Add exclude path") do |exc|
-			@options.exclude = parse_option_list(@options.exclude, exc, ",")
+			@options.excludes = parse_option_list(@options.excludes, exc, ",")
 		end
 
 		opts.on('-oOPTS', '--opts OPTS', "Add ssh options") do |opt|
@@ -984,12 +1083,7 @@ class Rubac
 			@options.smtp = server
 		end
 
-		opts.on('-u', '--update', "Perform an update backup ignoring incrementals") do
-			@options.update = true
-			set_command("run")
-		end
-
-		opts.on('-IN', '--incremental N', "Set the number of incremental backups") do |ninc|
+		opts.on('-I', '--incremental N', "Set the number of incremental backups") do |ninc|
 			ninc = ninc.to_i
 			if ninc < 0
 				$msg.err "number of incrementals must be greater than or equal to 0, ignoring #{ninc}"
@@ -998,8 +1092,13 @@ class Rubac
 			end
 		end
 
-		opts.on('-pNAME', '--profile NAME', "Apply opts to specified profile") do |profile|
-			@options.profile = File.basename(profile, ".xml")
+		opts.on('-p', '--profile [NAME]', "Apply opts to specified profile") do |profile|
+			if not profile
+				$msg.info "\nListing profiles in #{@options.datadir}\n\n"
+				cmd="ls -l #{@options.datadir}/*.yaml"
+				exec(cmd)
+			end
+			@options.profile = File.basename(profile, ".yaml")
 		end
 		# TO DO - add additional options
 
@@ -1017,6 +1116,11 @@ class Rubac
 
 		opts.on('--examples', "Display examples") do
 			set_command("examples")
+		end
+
+		opts.on('-u', '--update', "Perform an update backup ignoring incrementals") do
+			@options.update = true
+			set_command("run")
 		end
 
 		opts.on('-r', '--run', "Run the backup") do
@@ -1043,7 +1147,7 @@ class Rubac
 		end
 
 		opts.on('--select NAME', "Select a backup for pruning or restoring") do |name|
-			@options.select = name
+			@options.select = name.to_s
 		end
 
 		opts.on('-S', '--search glob', "Search backup history") do |glob|
@@ -1084,7 +1188,7 @@ class Rubac
 	# Performs post-parse processing on options
 	def process_options
 		@options.verbose = false if @options.quiet
-		@options.dbname = @options.profile + ".xml"
+		@options.dbname = @options.profile + ".yaml"
 	end
 
 	def output_options
@@ -1103,15 +1207,7 @@ class Rubac
 	end
 
 	def process_arguments_clients
-		#if @options.client[0] == "__all__"
-		#	@options.client = []
-		#	@options.client = @config.get_clients.keys
-		#	@options.all = false
-		#end
-		return if @options.client.nitems > 0
-		#@config.get_clients.each_key do |client|
-		#	@options.client << client
-		#end
+		return if @options.client.length > 0
 		@options.client = @config.get_clients.keys
 		@options.all = true
 		$msg.debug "clients = #{@options.client.join(", ")}"
@@ -1128,6 +1224,12 @@ class Rubac
 
 	def initialize_backup_destination(dest)
 		begin
+			FileUtils.mkdir_p(dest)
+		rescue
+			$msg.die "creating backup destination #{dest}"
+		end
+
+		begin
 		fd=File.new(File.join(dest, "rubac.init"), File::CREAT|File::RDWR|File::EXCL, 0600)
 		rescue Errno::EACCES
 			$msg.die "access denied, initializing destination #{dest}"
@@ -1141,11 +1243,36 @@ class Rubac
 		true
 	end
 
+	def prompt_string(msg)
+		printf "%s ", msg
+		reply = gets.chomp
+		return reply.length > 0 ? reply : false
+	end
+
+	def prompt_char(msg, chrs)
+		printf "%s [%s] ", msg, chrs
+		reply = gets.chomp[0].chr
+		reply = chrs[/#{reply}/]
+		return reply
+	end
+
 	# Setup the arguments
 	def process_arguments
 		# TO DO - place in local vars, etc
 		@config = Config_rubac.new
-		@config.load_xml(@options.dbname, @options.datadir)
+		if not @config.load(@options.dbname, @options.datadir)
+			ans = prompt_char("Do you want to create a new profile?", "yn")
+			$msg.die "Aborting" if ans != "y"
+			ans = prompt_string("Backup destination directory:")
+			if ans
+				if not File.exist?(ans)
+					$msg.warn "Destination directory #{ans} not found"
+				elsif not File.lstat(ans).directory?
+					$msg.die "Destination #{ans} is not a directory"
+				end
+				@options.dest = ans
+			end
+		end
 
 		# setup logging immediately after loading the configuration
 		if @options.logdir == nil
@@ -1170,8 +1297,23 @@ class Rubac
 			logname = @options.logname
 		end
 
+		@config.set_global_key_value("logname", @options.logname) if @options.logname
+		@config.set_global_key_value("logdir", @options.logdir) if @options.logdir
+		@config.set_global_key_value("email", @options.email) if @options.email
+		@config.set_global_key_value("smtp", @options.smtp) if @options.smtp
+
+		# setup logging and notification
 		$msg.debug "log=#{logdir}/#{logname}"
 		$msg.privlog(logname, logdir, 0600)
+		# def notify(to_addr, to_name, from_addr, from_name, server='localhost')
+		@options.email = @config.get_global_key_value("email")
+		if @options.email.length > 0
+			@options.smtp = @config.get_global_key_value("smtp")
+			@options.smtp = nil if @options.smtp.length == 0
+			from = "#{Etc.getlogin}@#{Socket.gethostname}"
+			$msg.info "Setup notify email to #{@options.email} from #{from} using server=#{@options.smtp}"
+			$msg.notify(@options.email, from, @options.smtp)
+		end
 
 		version_command
 
@@ -1179,32 +1321,35 @@ class Rubac
 			initialize_backup_destination(@options.dest)
 			@config.set_global_key_value("dest", @options.dest)
 		end
-		@config.set_global_key_value("logname", @options.logname) if @options.logname
-		@config.set_global_key_value("logdir", @options.logdir) if @options.logdir
-		@config.set_global_key_value("smtp", @options.smtp) if @options.smtp
 
 		process_arguments_clients
 
 		if @options.global
-			@config.global_updates(@options.update_cmd, @options.include, @options.exclude, @options.opts)
-			@config.set_global_key_value("ninc", @options.ninc) if @options.ninc
+			@config.global_update(@options.update_cmd, "includes", @options.includes, ",")
+			@config.global_update(@options.update_cmd, "excludes", @options.excludes, ",")
+			@config.global_update(@options.update_cmd, "opts", @options.opts, " ")
+			@config.global_update(@options.update_cmd, "ninc", @options.ninc)
+			@config.global_update(@options.update_cmd, "compress", @options.compress)
 		else
 			@options.client.each do |client|
-				@config.client_updates(client, @options.update_cmd, @options.include, @options.exclude, @options.opts)
-				@config.set_client_key_value(client, "address", @options.address) if @options.address
-				@config.set_client_key_value(client, "ninc", @options.ninc) if @options.ninc
-				@config.set_client_key_value(client, "compress", @options.compress) if @options.compress
+				#@config.client_updates(client, @options.update_cmd, @options.includes, @options.excludes, @options.opts)
+				@config.client_update(client, @options.update_cmd, "includes", @options.includes, ",")
+				@config.client_update(client, @options.update_cmd, "excludes", @options.excludes, ",")
+				@config.client_update(client, @options.update_cmd, "opts", @options.opts, " ")
+				@config.client_update(client, @options.update_cmd, "address", @options.address)
+				@config.client_update(client, @options.update_cmd, "ninc", @options.ninc)
+				@config.client_update(client, @options.update_cmd, "compress", @options.compress)
 			end
 		end
 
-		if @options.delete_client.nitems > 0
+		if @options.delete_client.length > 0
 			@options.delete_client.each do |cli|
 				$msg.info "Deleting client #{cli}"
 				@config.del_client(cli)
 			end
 		end
 
-		@xml = @config.save_xml
+		@config.save(@options.dbname, @options.datadir)
 	end
     
 	def print_command(suffix="")
@@ -1225,17 +1370,17 @@ class Rubac
 	end
  
 	def run_command_prep_linkdest(host, pdest)
-		ninc = @config.get_client_ninc(host)
+		return nil if @ninc == 0
 
 		# setup flags for delete
-		rm_flags = { :force => true, :verbose => true }
-		if @options.dry_run 
-			rm_flags.merge!( :noop => true )
-		end
+		#rm_flags = { :force => true } # , :verbose => true }
+		#if @options.dry_run 
+		#	rm_flags.merge!( :noop => true )
+		#end
 
-		i = []
-		i = (1..ninc).to_a.reverse
-		i.each do |m|
+		expire = ""
+
+		(1..@ninc).to_a.reverse.each do |m|
 			n = m - 1
 			# Example,
 			#   n==4, ndest is rubac.4
@@ -1244,7 +1389,7 @@ class Rubac
 			nname = @config.get_client_incrementals(host, n)
 			mname = @config.get_client_incrementals(host, m)
 
-			$msg.puts "n=#{n} nname=#{nname} m=#{m} mname=#{mname}"
+			$msg.debug "n=#{n} nname=#{nname} m=#{m} mname=#{mname}"
 
 			next if nname.length == 0
 
@@ -1260,15 +1405,19 @@ class Rubac
 				next
 			end
 
-			if m == ninc and mname.length > 0
+			if m == @ninc and mname.length > 0
 				if File.exist?(mdest)
-					FileUtils.rm_r(mdest, rm_flags)
+					#$msg.info("deleting expired incremental: #{mdest}")
+					#FileUtils.rm_r(mdest, rm_flags)
+					expire = mdest
 				end
 			end
 			if File.exist?(ndest)
 				@config.set_client_incremental(host, m, nname)
 			end
 		end
+		# return the entry to delete
+		expire
 	end
 
 	def run_command_fill(droot, path, log)
@@ -1288,87 +1437,153 @@ class Rubac
 		}
 	end
 
-	def run_command_rsync(host, inc, bdest, ldest)
+	# return value is 0 for okay, > 0 otherwise
+	def run_command_rsync(host, bdest, ldest)
 
 		logf = File.join(bdest, "rubac.log.yaml")
 		if File.exist?(logf)
 			fill = false
 			log = File.open(logf) { |yf| YAML::load(yf) }
-			$msg.info "Log found: loaded #{logf} with #{log.nitems}"
+			$msg.log "Log found: loaded #{logf} with #{log.length}"
 		else
 			fill = true
 			log = Array.new
 		end
 
-		cmd =  "rsync #{@sshopts["global"]} #{@sshopts["#{host}"]}"
+		return 1 if @includes.length == 0
+
+		src = ""
+		@includes.split(",").each do |inc|
+			inc.strip!
+			inc = "#{@address}:#{inc}" if @address != "localhost" and @address != "127.0.0.1"
+			src << "#{inc} "
+		end
+		src.rstrip!
+
+		cmd =  "rsync -r #{@sshopts["global"]} #{@sshopts["#{host}"]}"
 		cmd << " --delete" if not @options.update
 		cmd << " --link-dest=#{ldest}" if ldest
+
+		# create files-from temporary file
+		#incl = File.join(@options.tmp, File.basename(bdest) + ".#{host}.incl")
+		#incf = File.open( incl, "w" )
+		#@includes.split(",").each do |inc|
+		#	inc.strip!
+		#	inc = File.join(File.dirname(inc), File.basename(inc)) if inc[/\/$/]
+		#	#inc = " #{@address}:#{inc}" if @address != "localhost" and @address != "127.0.0.1"
+		#	incf.puts( inc )
+		#end
+		#incf.close
+
 		# write the excludes to a file and use --exclude-from 
+		excl = nil
 		if @excludes.length > 0
-			excl = File.join(@options.tmp, File.basename(bdest) + ".excl")
+			excl = File.join(@options.tmp, File.basename(bdest) + ".#{host}.excl")
 			exclf = File.open( excl, "w" )
+			#exclf.puts("/")
 			@excludes.split(",").each do |x|
 				exclf.puts( x )
 			end
 			exclf.close
-			cmd << " --exclude-from=\"#{excl}\"" if @excludes.length > 0
+			cmd << " --exclude-from=\"#{excl}\""
 		end
-#		addr = get_client_address(host)
-#		$msg.info "addr=#{addr}"
-#		if addr != "localhost" and addr != "127.0.0.1"
-#			includes.each_index do |i|
-#				includes[i] = "#{host}:" + includes[i]
-#			end
-#		end
 
-		if @address != "localhost" and @address != "127.0.0.1"
-			cmd << " #{@address}:#{inc}"
-		else
-			cmd << " #{inc}"
-		end
+		# with files-from we use "/" as the src (or host:/ for remote)
+		#src = "/"
+		#src = " #{@address}:#{src}" if @address != "localhost" and @address != "127.0.0.1"
+		# cmd << " --files-from=\"#{incl}\""
+
+		cmd << " #{src}"
 		cmd << " #{bdest}"
-		$msg.info cmd
+
 		#Open3.popen3(cmd) { |stdin,stdout,stderr|
 		#}
+		
+		# create a stack to hold the last 10 lines of output
+		estack = Stack.new(10)
 
+		$msg.log cmd
+		$msg.print "Backup #{@includes}\n"
+		$msg.print "\t--delete\n" if not @options.update
+		$msg.print "\t--link-dest    #{ldest}\n" if ldest
+		#$msg.print "\t--files-from   #{incl}\n"
+		$msg.print "\t--exclude-from #{excl}\n" if excl
+		$msg.print "\t               #{src}\n"
+		$msg.print "\t               #{bdest}\n"
+
+		incs=@includes.split(",")
+		# write stderr to stdout
+		cmd << " 2>&1"
 		p = IO.popen(cmd)
 		while (line = p.gets)
 			line.chop!
 
-			if line[/^#{inc[1..-1]}/]
-				line = "/" + line
-				$msg.debug "//:#{line}://"
+			estack.push(line)
+
+			# sent 78708 bytes  received 38072683 bytes  1956481.59 bytes/sec
+			if line =~ %r{(?:sent)(?:\s+)(\d+)(?:\s+bytes\s+received\s+)(\d+)(?:\s+bytes\s+)(\d+\.\d+)(?:\s+bytes\/sec)}
+				$msg.print "\tsent #{$1} bytes, recv #{$2} bytes, rate #{$3} bytes/sec\n"
+				$msg.log "$ #{line}"
+				next
+			end
+
+			# total size is 77334376  speedup is 2.81
+			if line =~ %r{(?:total size is\s+)(\d+)(?:\s+speedup is\s+)(\d+\.\d+)}
+				$msg.print "\tsize #{$1}, speedup #{$2}\n"
+				$msg.log "$ #{line}"
+				next
 			end
 
 			if line[/\sis uptodate$/]
 				line.sub!(/\sis uptodate$/, "")
 				$msg.debug "uu:#{line}:uu"
-				log << line
-			elsif line[/^#{inc}.*/]
-				$msg.log line
-				log << line
-			elsif line[/^\s*deleting\s+/]
+				log << "/" + line
+				$msg.print "#{line} is uptodate\n" if @options.verbose
+				next
+			end
+
+			if line[/^\s*deleting\s+/]
 			# if deleting, remove the file from 'log', if it exists
 			# ^deleting home/rico/.thumbnails/normal/6bf9e300a41296740a5fdd89b98e1d93.png
-				$msg.log line
 				line.sub!(/^\s*deleting\s+/, "/")
+				$msg.log "Deleting #{line}"
+				$msg.print "Deleting #{line}\n" if @options.verbose
 				log.delete(line)
-			elsif line[/^\[sender\] hiding directory\s/]
+			end
+
+			inc = nil
+			incs.each do |i|
+				if line[/^#{i[1..-1]}/]
+					inc = i
+					line = "/" + line
+					$msg.debug "//:#{line}://"
+					break
+				end
+			end
+
+			if inc and line[/^#{inc}.*/]
 				$msg.log line
+				log << line
+				$msg.print "#{line}\n" if @options.verbose
+			#elsif line[/^\[sender\] hiding directory\s/]
+			#	$msg.log line
 			else
-				$msg.info "$ #{line}"
+				$msg.log "$ #{line}"
+				$msg.print "#{line}\n" if @options.verbose
 			end
 		end
-		
-		## TODO get status of command??
-		status=$?
-		p status
-		#out = %x{#{cmd}}
-		#status = $?.exitstatus
-		#$msg.info out
-		if status and status != 0
-			$msg.err "running command %Q(#{cmd})"
-			exit(status)
+		# must close IO to get exitstatus into $?
+		p.close
+		ret = $?.exitstatus
+		status = ret == 0 ? "Success" : "Fail"
+		$msg.print "\t#{status} ret=#{ret}\n"
+		if status == "Fail"
+			$msg.err "command failed #{cmd}"
+			$msg.info " >>>> command output <<<<<"
+			estack.each do |line|
+				$msg.info " >> #{line}"
+			end
+			$msg.info " >>>>"
 		end
 
 		#bdir = File.join(bdest, inc)
@@ -1377,14 +1592,11 @@ class Rubac
 		# remove duplicates
 		log.uniq!
 
-		$msg.info "Backup log length=#{log.nitems} to #{logf}"
+		$msg.log "Backup log length=#{log.length} to #{logf}"
 		File.open( logf, "w" ) do |out|
 			YAML.dump( log, out )
 		end
-
-	#	log.each do |entry|
-	#		$msg.info entry
-	#	end
+		return ret
 	end
 
 	def date_time_str(fmt="%Y-%m-%d_%H-%M-%S")
@@ -1417,33 +1629,35 @@ class Rubac
 
 	# backup to bdir with hardlink to ldir, if it exists
 	def run_command
-
 		print_command
-
-		accept_signals(false)
 
 		host = @client
 
-		if @dest.length == 0
-			$msg.err "backup destination not set"
-			exit(1)
+		if @includes.length == 0
+			$msg.err "nothing included in backup"
+			return 1
 		end
 
 		ldir = bdir = ""
 		if @options.snapshot
 			bdir = "rubac.snapshot.#{@options.snapshot}"
-			ldir = @options.select
+			ldir = @select
 			ldir = @config.get_client_incrementals(host, 0) if not ldir
 		elsif @options.update
 			bdir = @config.get_client_incrementals(host, 0)
 			# TODO should I set ldir for update?
-			ldir = @config.get_client_incrementals(host, 1)
-			bdir = get_backup_dirname if bdir.length == 0
+			# ldir = @config.get_client_incrementals(host, 1)
 		else
-			bdir = get_backup_dirname
-			ldir = @config.get_client_incrementals(host, 0)
+			# if ninc == 0 do update (with delete?)
+			if @ninc == 0
+				bdir = @config.get_client_incrementals(host, 0)
+			else
+				bdir = get_backup_dirname
+				ldir = @config.get_client_incrementals(host, 0)
+			end
 		end
 
+		bdir = get_backup_dirname if bdir.length == 0
 		ldir = "__none__" if ldir.length == 0
 
 		pdest = get_client_dir(host, true)
@@ -1457,24 +1671,25 @@ class Rubac
 		if runlock.flock(File::LOCK_EX|File::LOCK_NB) == false
 			$msg.err "cannot lock file #{rlock}"
 			runlock.close
-			return
+			return 1
 		end
 
 		bdest = File.join(pdest, bdir)
 		ldest = File.join(pdest, ldir)
-		$msg.info "bdir=#{bdest} ldir=#{ldest}"
+		$msg.debug "bdir=#{bdest} ldir=#{ldest}"
 
+		expire = ""
 		if @options.snapshot
 			if not File.exist?(ldest)
 				$msg.err "run one backup before doing a snapshot"
-				exit (1)
+				return 1
 			end
 		elsif @options.update
 			$msg.info "Running update on #{bdest}"
 			ldest = nil if not File.exist?(ldest)
 		else
 			# move out incrementals
-			run_command_prep_linkdest(host, pdest) if ldir != "__none__"
+			expire = run_command_prep_linkdest(host, pdest) if ldir != "__none__"
 			# if the link destination doesn't exist, set it to nil
 			ldest = nil if not File.exist?(ldest)
 		end
@@ -1494,23 +1709,50 @@ class Rubac
 
 		# log history files by include
 		# include => "file, file, file, ..."
-		inc = @includes.split(",")
-		inc.each do |i|
-			# strip off any trailing path slashes
-			ifp = File.join(File.dirname(i), File.basename(i))
-			run_command_rsync(host, ifp, bdest, ldest)
+		#
+		status = 0
+		#inc = @includes.split(",")
+		#inc.each do |i|
+		#	# strip off any trailing path slashes
+		#	ifp = File.join(File.dirname(i), File.basename(i))
+		#	status = run_command_rsync(host, ifp, bdest, ldest)
+		#	break if status > 0
+		#end
+
+		accept_signals(false)
+
+		status = run_command_rsync(host, bdest, ldest)
+
+		rm_flags = { :force => true , :verbose => true }
+		rm_flags.merge!( :noop => true ) if @options.dry_run 
+		if status == 0
+			if expire and expire.length > 0 and File.exist?(expire)
+				$msg.info("deleting expired incremental: #{expire}")
+				FileUtils.rm_r(expire, rm_flags)
+			end
+			@config.set_client_incremental(host, 0, bdir) if not @options.snapshot
+			@config.save(@options.dbname, @options.datadir) if not @options.dry_run
+			FileUtils.rm_r(bdest, rm_flags) if @options.dry_run
+		elsif not @options.update
+			$msg.info("deleting incomplete backup")
+			FileUtils.rm_r(bdest, rm_flags)
 		end
 
-		@config.set_client_incremental(host, 0, bdir) if not @options.snapshot
-
-		@config.save_xml if not @options.dry_run
+		if @options.dry_run and not @options.update
+			$msg.info "--dry-run, removing backup #{bdest}"
+			FileUtils.rm_r(bdest, :force => true , :verbose => true )
+		end
 
 		runlock.flock(File::LOCK_UN)
 		File.delete(rlock)
 
 		accept_signals(true)
 
-		exit(1) if $signal_exit == true
+		if $signal_exit == true
+			$msg.err("aborting on signal")
+			return status
+		end
+		return status
 	end
 
 	#
@@ -1540,7 +1782,7 @@ class Rubac
 		inc = inc.split("#{delim}")
 		$msg.printf "%10s=", key
 
-		if inc.nitems > 1
+		if inc.length > 1
 		inc.each do |i|
 			$msg.printf "\n\t%-12s", i
 		end
@@ -1551,11 +1793,19 @@ class Rubac
 	end
 
 	def list_command_client(client)
-		$msg.printf "##### #{client} #####\n"
+		if @address != client
+			$msg.printf "##### #{client}:#{@address} #####\n"
+		else
+			$msg.printf "##### #{client} #####\n"
+		end
 		list_command_client_key(client, 'includes')
 		list_command_client_key(client, 'excludes')
 		list_command_client_key(client, 'opts', " ")
 		list_command_client_key(client, 'ninc', nil)
+	end
+
+	def list_command_pp(key, value)
+		$msg.printf "%12s=%s\n", key, value
 	end
 
 	def list_command_global_settings
@@ -1563,47 +1813,34 @@ class Rubac
 		@global_settings = true
 
 		$msg.printf "##### Global settings #####"
-		$msg.printf "%10s=%s\n", "profile", @options.profile
+		list_command_pp("profile", @options.profile)
 		if @dest.length == 0
 			$msg.warn "backup destination not set"
 		else
-			$msg.printf %Q(%10s=%s\n), "dest", @dest
+			list_command_pp("dest", @dest)
 		end
-		$msg.printf %Q(%10s=%s\n), "ssh opts", @sshopts["global"]
-		$msg.printf %Q(\n)
+		list_command_pp("ssh opts", @sshopts["global"])
+		list_command_pp("email", @options.email) if @options.email
+		list_command_pp("smtp server", @options.smtp) if @options.smtp
+		$msg.puts ""
 		@global_settings = true
 	end
 
 	def list_command
-
 		if @options.verbose
 			$msg.info "##### Configuration #####"
-			$msg.info "#{@xml}\n"
+			@config.dump
 		end
 
 		list_command_global_settings
 
+		return if @options.global
+
 		list_command_client(@client)
-
-		#puts "##### Email test"
-		#email = Email.new
-		#email.server = @config.get_global_key_value("smtp")
-		#email.to("steeve.mccauley@gmail.com", "Steeve McCauley")
-		#email.to("steeve@oneguycoding.com", "One Guy Coding")
-		#email.from("rubac@linguini.home", "Rubac Backup User")
-		#subject = "Rubac Test"
-		#body = "This is a test email\nThis is the second line\nThis is the last line\n"
-		#email.send(subject, body, @config.get_global_key_value("smtp", nil))
-
-		#$msg.debug("this is a debug message")
-		#$msg.info("this is an info message")
-		#$msg.warn("this is a warning message")
-		#$msg.err("this is a warning message")
-		#$msg.die("this is a die message")
 	end
 
 	def history_command_display(cli, hist)
-		return if hist.nitems == 0
+		return if hist.length == 0
 
 		print_command
 
@@ -1629,17 +1866,17 @@ class Rubac
 
 	def history_command_get_history(cli)
 		entries = []
-		ninc = @config.get_client_ninc(cli)
-		return entries if ninc == nil or ninc == 0
-
-		ninc.times do |n|
+		(0..@ninc).to_a.each do |n|
 			next if @options.hist_index != nil and @options.hist_index != n
 			name = @config.get_client_incrementals(cli, n)
 			break if name.length == 0
 			entries << name
 		end
 
-		Dir.chdir(get_client_dir(cli, false))
+		cdir = get_client_dir(cli, false)
+		return entries if not File.exist?(cdir)
+
+		Dir.chdir(cdir)
 		entries.concat(Dir.glob('rubac.snapshot.*'))
 		entries
 	end
@@ -1711,13 +1948,13 @@ class Rubac
 	def search_command
 		print_command
 		hist = []
-		if @options.select
-			hist << @options.select
+		if @select
+			hist << @select
 		else
 			hist = history_command_get_history(@client)
 		end
 
-		return if hist.nitems == 0
+		return if hist.length == 0
 
 		@inodes = {}
 		@options.search.each do |pattern|
@@ -1730,24 +1967,22 @@ class Rubac
 	def prune_command_prune(host, hist, index)
 		$msg.info "Pruning #{host}:#{hist[index]} for history index #{index}"
 
-		if index < 0 or index >= hist.nitems
-			err "Invalid index=#{index} with hist.nitems=#{hist.nitems}"
+		if index < 0 or index >= hist.length
+			err "Invalid index=#{index} with hist.length=#{hist.length}"
 			$ret = 1
-			return
+			return 1
 		end
-
-		ninc = @config.get_client_ninc(host)
 
 		# setup flags for delete
 		rm_flags = { :force => true, :verbose => true }
 		rm_flags.merge!( :noop => true ) if @options.dry_run 
 
-		j = hist.nitems-1
+		j = hist.length-1
 		if index < j
 			a = (index..j).to_a
 			a.each do |x|
 				y = x+1
-				break if y == hist.nitems
+				break if y == hist.length
 				$msg.info "#{x}:#{hist[y]}"
 				@config.set_client_incremental(host, x, hist[y])
 			end
@@ -1762,39 +1997,47 @@ class Rubac
 		if File.exist?(prune)
 			$msg.info "Remove #{index}:#{hist[index]}:#{prune}"
 			FileUtils.rm_r(prune, rm_flags)
+			status = $?
 		else
 			$msg.warn "Prune backup #{prune} not found"
 		end
-		@config.save_xml if not @options.dry_run
+		@config.save(@options.dbname, @options.datadir) if not @options.dry_run
 
 		accept_signals(true)
+		return $status
 	end
 
 	def prune_command
+
+		if @select == nil
+			$msg.err "specify which backup to delete with --select"
+			$ret = 1
+			return 1
+		end
+
 		hist = []
 		hist = history_command_get_history(@client)
 
-		if hist.nitems < 1
+		if hist.length < 1
 			$msg.err "No history found for #{@client}"
 			$ret = 1
-			return
+			return 1
 		end
-
-		@options.select = hist[hist.nitems-1] if @options.select == nil
 
 		index = nil
 		hist.each_index do |i|
-			if hist[i] == @options.select
+			if hist[i] == @select
 				index = i
 				break
 			end
 		end
 
-		$msg.die "Selected backup #{@options.select} not found" if index == nil
+		$msg.die "Selected backup #{@select} not found" if index == nil
 
 		$msg.info "Deleting #{hist[index]} with index=#{index}"
 
 		prune_command_prune(@client, hist, index)
+		return $?
 	end
 
 	def restore_command_cmd(cmd)
@@ -1815,7 +2058,7 @@ class Rubac
 				lines << l
 			end
 		end
-		$msg.warn "restore-from #{path} is empty" if lines.nitems == 0
+		$msg.warn "restore-from #{path} is empty" if lines.length == 0
 		lines
 	end
 
@@ -1840,8 +2083,8 @@ class Rubac
 		host = nil if host == "localhost" or host == "127.0.0.1"
 
 		# @options.select may contain the backup source
-		if @options.select
-			source = @options.select
+		if @select
+			source = @select
 		else
 			source = @config.get_client_incrementals(@client, 0)
 		end
@@ -1859,7 +2102,7 @@ class Rubac
 
 		# restore_to can include a host [host:]/path
 		adest = @options.restore_to.split(":",2)
-		dest = host + ":" if adest.nitems == 1 and host
+		dest = host + ":" if adest.length == 1 and host
 		dest << @options.restore_to
 
 		bsource = get_client_dir(@client, false, source)
@@ -1867,7 +2110,7 @@ class Rubac
 		# TODO check that bsource exists
 		Dir.chdir(bsource)
 
-		if @options.restore.nitems > 0
+		if @options.restore.length > 0
 			@options.restore_from = restore_command_write_restore_from(@options.restore)
 			#cmd="rsync #{@sshopts["restore"]} #{restore[1..-1]} #{dest}"
 		elsif @options.restore_from.length > 0
@@ -1881,6 +2124,8 @@ class Rubac
 		cmd = "rsync #{@sshopts["restore"]} --files-from=#{@options.restore_from} #{bsource} #{dest}"
 		$msg.info cmd
 
+		# write stderr to stdout
+		cmd << " 2>&1"
 		p = IO.popen(cmd)
 		while (line = p.gets)
 			line.chop!
@@ -1896,14 +2141,14 @@ class Rubac
 			end
 		end
 		## TODO get status of command??
-		status=$?
-		p status
+		p.close
+		status=$?.exitstatus
+		#p status
 		#out = %x{#{cmd}}
 		#status = $?.exitstatus
 		#$msg.info out
-		if status and status != 0
-			$msg.err "running command %Q(#{cmd})"
-			exit(status)
+		if status != 0
+			$msg.err "command failed %Q(#{cmd})"
 		end
 	end
 
@@ -1917,24 +2162,54 @@ class Rubac
 		@includes = @config.get_client_includes(client)
 		@excludes = @config.get_client_excludes(client)
 		@address = @config.get_client_address(client)
+		@ninc = @config.get_client_ninc(client)
 
 		@options.compress = @config.get_client_key_value(client, "compress")
 
 		@sshopts["#{client}"] = @config.get_client_opts(client)
 		@sshopts["#{client}"] << " --compress" if @options.compress == true
 
-		eval @options.cmd
+		@select = nil
+		case @options.select
+		when @options.select[/[0-9].*/]
+			@select = @config.get_client_incrementals(client, @options.select)
+			$msg.die "selected backup #{@options.select} not found" if @select.length == 0
+			$msg.info "Selected backup ##{@options.select} #{@select}"
+		when "newest"
+			@select = @config.get_client_incrementals(client, 0)
+		when "oldest"
+			(0..@ninc).to_a.reverse.each do |i|
+				s = @config.get_client_incrementals(client, i)
+				if s.length > 0
+					@select = s
+					break
+				end
+			end
+		else
+			@select = @options.select
+		end if @options.select
+		@select = nil if @select and @select.length == 0
+
+		status=eval @options.cmd
+		status
 	end
 
-	def process_command_clients
-		$msg.die "backup destination not set" if not File.exist?(@dest)
-
+	def process_command_clients(notify=false)
+		subject = "#{@options.cmd}: #{@options.profile}:#{@options.client.join(",")}"
 		@options.client.each do |client|
 			$msg.set_client(client)
 			$msg.debug ">>>>> Running #{@options.cmd} for #{client}"
 			process_command_client(client)
 			$msg.debug "<<<<< Done running #{@options.cmd} for #{client}"
 			$msg.set_client
+		end
+		if notify == true
+			du_cmd="df -lm #{@dest}"
+			$msg.print "\n" + `#{du_cmd}` + "\n"
+			$msg.print "\nSee #{$msg.privlog_path} for details\n"
+
+			$msg.puts "Send notify=#{notify} with subject=#{subject}"
+			$msg.send_notify(subject)
 		end
 	end
 
@@ -1960,15 +2235,16 @@ class Rubac
 		when "help_command", "usage_command", "examples_command"
 			eval @options.cmd
 		when "list_command", "history_command", "search_command"
-			process_command_clients
+			process_command_clients(false)
 		when "run_command", "snapshot_command", "prune_command", "restore_command"
 			$msg.die "Must specify at least one client" if @options.all == true
-			process_command_clients
+			$msg.die "backup destination not set" if not File.exist?(@dest)
+			process_command_clients(true)
 		else
 			#$msg.puts "huh? #{Config::CONFIG['host_os']}"
 			@options.client.each do |client|
-				$msg.info "#{client}:includes=#{@config.get_client_includes(client)}" if @options.include
-				$msg.info "#{client}:excludes=#{@config.get_client_excludes(client)}" if @options.exclude
+				$msg.info "#{client}:includes=#{@config.get_client_includes(client)}" if @options.includes
+				$msg.info "#{client}:excludes=#{@config.get_client_excludes(client)}" if @options.excludes
 				$msg.info "#{client}:opts=#{@config.get_client_opts(client)}" if @options.opts
 			end
 		end
