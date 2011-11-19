@@ -80,7 +80,7 @@
 # Search for all ogg vorbis files and restore them to /tmp
 #   rubac -c esme --restore --restore-to=/tmp --search 'caravan.palace'
 #
-# == Environment Variables ==
+# == Environment Variables
 #
 #   RUBAC_DATADIR - set the database directory
 #   RUBAC_PROFILE - set the backup profile to use
@@ -90,11 +90,11 @@
 #   RSYNC_RSH     - ssh command string, defaults to "ssh" here
 #
 # == Author
-#   Steeve McCauley
+#   Steeve McCauley steeve@oneguycoding.com
 #
 # == Copyright
 #
-#   Copyright (c) 2009 Steeve McCauley. Licensed under the GPL
+#   Copyright (c) 2011 Steeve McCauley. Licensed under the GPL
 #
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -198,7 +198,7 @@ class HeaderHelp
 	end
 end
 
-$help=HeaderHelp.new($0)
+$help=HeaderHelp.new(__FILE__)
 #puts $help.list
 #$help.print([ "Synopsis", "Usage", "Examples", "Environment Variables" ])
 
@@ -1021,8 +1021,10 @@ class Rubac
 	end
 
 	# Parse options, check arguments, then process the command
-	def main
+	def run
  
+	  $ret=0
+	  
 		rsync_check_version
 
 		if arguments_valid? && parsed_options?
@@ -1042,6 +1044,9 @@ class Rubac
 		else
 			usage_command
 		end
+		
+		exit $ret
+		
 	end
 
 	protected
@@ -2342,11 +2347,4 @@ def trapSigHup
 	$stderr << "\nHUP signal ignored\n"
 	$signal_exit = true
 end
-
-$ret = 0
-
-rubac = Rubac.new(ARGV, STDIN)
-rubac.main
-
-exit $ret
 

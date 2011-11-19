@@ -1,0 +1,15 @@
+#!/usr/bin/env ruby
+#
+# load and run rubac
+#
+
+# add to front of $LOAD_PATH if this file's dir isn't already there
+LLIBDIR=File.expand_path(File.dirname(__FILE__))+"/../lib"
+$:.unshift(LLIBDIR) unless $:.include?(LLIBDIR)
+
+puts "LLIBDIR="+LLIBDIR 
+
+require 'rubac'
+
+rubac = Rubac.new(ARGV, STDIN)
+rubac.run
