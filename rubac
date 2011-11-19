@@ -144,6 +144,11 @@ CONFIG_KEY_SMTP="smtp"
 UPDATE_CMD_ADD="add"
 UPDATE_CMD_DEL="delete"
 
+#
+# Extract help from the given file header comments
+#
+# Sections are delimited by " == Section Name ..."
+#
 class HeaderHelp
 	attr_reader :sections
 
@@ -1656,12 +1661,12 @@ class Rubac
 		return ret
 	end
 
-	def date_time_str(fmt="%Y-%m-%d_%H-%M-%S")
+	def date_time_str(fmt="%Y%m%d")
 		Time.now.strftime(fmt)
 	end
 
 	def get_backup_dirname(name="rubac.", ext="")
-		name + date_time_str("%Y-%m-%d_%H-%M-%S") + ext
+		name + date_time_str("%Y%m%d") + ext
 	end
 
 	def get_client_dir(host, create=false, backup=nil, path=nil)
@@ -1795,10 +1800,10 @@ class Rubac
 			FileUtils.rm_r(bdest, rm_flags)
 		end
 
-		if @options.dry_run and not @options.update
-			$msg.info "--dry-run, removing backup #{bdest}"
-			FileUtils.rm_r(bdest, :force => true , :verbose => true )
-		end
+		#if @options.dry_run and not @options.update
+		#	$msg.info "--dry-run, removing backup #{bdest}"
+		#	FileUtils.rm_r(bdest, :force => true , :verbose => true )
+		#end
 
 		runlock.flock(File::LOCK_UN)
 		File.delete(rlock)
