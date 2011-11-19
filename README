@@ -1,0 +1,5 @@
+
+ rubac - ruby rsync backup
+
+ Easy command line backup using rsync --hard-links options
+
