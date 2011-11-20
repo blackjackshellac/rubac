@@ -161,7 +161,7 @@ class HeaderHelp
 				#line.chomp!
 				next unless line[/^#([^!].*)/]
 				line=$1
-				if line[/\s+==\s+(.*?)\s*=*\s*$/]
+				if line[/^\s*==\s+(.*?)\s*=*\s*$/]
 					section=$1
 					#puts  "New section: #{section}"
 				end
@@ -1422,7 +1422,6 @@ class Rubac
 	def help_command 
 		# RDoc::usage doesn't work in 1.9.x
 		#RDoc::usage('Synopsis', 'Usage', 'Options') #exits app
-		puts "Am I here?"
 		$help.print([ "Synopsis", "Usage", "Options" ])
 	end
     

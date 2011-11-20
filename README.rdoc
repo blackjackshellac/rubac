@@ -1,16 +1,18 @@
 
- == Synopsis 
+= ru(b)ac
+
+== Synopsis 
 
    A ruby backup front-end powered by rsync that can save
    multiple backup profiles between uses.
 
- == Usage 
+== Usage 
 
    rubac [options]
 
    For help use: rubac -h
 
- == Options
+== Options
 
    -g, --global            Apply includes, excludes, options etc., to global settings 
    -p, --profile [NAME]    Name of backup profile (default is rubac), list profiles without NAME
