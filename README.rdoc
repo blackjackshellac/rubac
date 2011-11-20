@@ -55,4 +55,32 @@
    -q, --quiet             Output as little as possible, overrides verbose
    -V, --verbose           Verbose output
 
+== Examples
+
+ Setup and use a backup on client esme,
+
+   rubac -c esme -g -o "--acls --xattrs"
+   rubac -c esme -i "/home/homer,/home/marge,/home/bart" -x "*/.gvfs/"
+   rubac -c esme -x "*/.thumbnails/,*/.thunderbird/*/ImapMail/,*/.beagle/"
+   rubac -c esme -m backupadmin@mail.host
+   rubac -c esme -l /var/log/rubac
+   ...
+   rubac -c esme --run
+   rubac -c esme --update
+
+ List then show history of client esme
+   rubac -c esme --list compact
+   rubac -c esme --history
+
+ Search for all files named .bashrc
+   rubac -c esme --search '.bashrc$'
+
+ Restore all files named file.dat to the local tmp directory instead of esme:/tmp
+   rubac -c esme --restore-to=localhost:/tmp --select rubac.2010-01-29_10-40-29 --restore file.dat
+
+ Restore the directory /home/homer/Desktop in place to esme:/
+   rubac -c esme --restore-to=esme:/ --restore /home/homer/Desktop/$
+
+ Search for all ogg vorbis files and restore them to /tmp
+   rubac -c esme --restore --restore-to=/tmp --search 'caravan.palace'
 

@@ -11,5 +11,5 @@ puts "LLIBDIR="+LLIBDIR
 
 require 'rubac'
 
-rubac = Rubac.new(ARGV, STDIN)
+rubac = Rubac::Rubac.new(ARGV, STDIN)
 rubac.run

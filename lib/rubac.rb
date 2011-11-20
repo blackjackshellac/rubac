@@ -113,15 +113,24 @@
 require 'optparse' 
 require 'net/smtp'
 require 'ostruct'
-require 'date'
-require 'socket'
-require 'etc'
+#require 'date'
+#require 'socket'
+#require 'etc'
+#require 'open3'
 require 'tmpdir'
-require 'open3'
 require 'yaml'
+require 'logger'
 
-require 'net/smtp'
-require 'rbconfig'	# ruby config
+# add to front of $LOAD_PATH if this file's dir isn't already there
+rreqdir=File.expand_path(File.dirname(__FILE__))
+$:.unshift(rreqdir) unless $:.include?(rreqdir)
+
+require 'rubac/config'	# rubac config
+require 'rubac/helper'  # rubac help from headers
+require 'rubac/stack'   # simple push/pop stack with a limited number of entries
+require 'rubac/msgLogger' # logger class that can cache recent messages
+
+$msg = Rubac::MsgLogger.new("console")
 
 #$debug = true
 
@@ -144,87 +153,9 @@ CONFIG_KEY_SMTP="smtp"
 UPDATE_CMD_ADD="add"
 UPDATE_CMD_DEL="delete"
 
-#
-# Extract help from the given file header comments
-#
-# Sections are delimited by " == Section Name ..."
-#
-class HeaderHelp
-	attr_reader :sections
-
-	def initialize(file)
-		@sections=Hash.new { |h,k| h[k]=[] }
-
-		File.open(file, 'r') { |f|
-			section=nil
-			f.each_line { |line|
-				#line.chomp!
-				next unless line[/^#([^!].*)/]
-				line=$1
-				if line[/^\s*==\s+(.*?)\s*=*\s*$/]
-					section=$1
-					#puts  "New section: #{section}"
-				end
-				next if section.nil?
-				@sections[section] << line
-			}
-		}
-	end
-
-	def list
-		@sections.each { |k,v| puts "key="+k }
-	end
-
-	def print(secs)
-		case secs
-		when Array
-			print_array(secs)
-		when String
-			print_section(secs)
-		end
-	end
-
-	private
-
-	def print_section(section)
-		return unless @sections.has_key?(section)
-		@sections[section].each { |line| puts line }
-	end
-
-	def print_array(secs)
-		secs.each { |s|
-			print_section(s)
-		}
-	end
-end
-
-$help=HeaderHelp.new(__FILE__)
+$help=Rubac::HeaderHelp.new(__FILE__)
 #puts $help.list
 #$help.print([ "Synopsis", "Usage", "Examples", "Environment Variables" ])
-
-# create a stack with a limited number of entries
-class Stack
-	attr_reader :elements
-
-	def initialize(elements)
-		@elements = elements
-		@stack = Array.new
-	end
-
-	def push(item)
-		return if item.nil?
-		@stack.delete_at(0) if @elements and @stack.length == @elements
-		@stack.push(item)
-	end
-
-	def pop
-		@stack.pop
-	end
-
-	def each
-		@stack.each { |item| yield item }
-	end
-end
 
 class Email
 	attr :server, true
@@ -289,583 +220,18 @@ END_OF_MESSAGE
 	end
 end
 
-$LOGLEVELS = {	"emerg"  => 0,
-		"alert"  => 1,
-		"crit"   => 2,
-		"err"    => 3,
-		"warn"   => 4,
-		"notice" => 5,
-		"info"   => 6,
-		"debug"  => 7 }
-
-class MsgObject
-	attr :client, true
-	attr_reader :io
-
-	def initialize(name, handle, datefmt=nil, sync=false)
-		@name = name
-		if handle
-			@io = handle
-		else
-			@io = String.new
-		end
-		@datefmt = datefmt
-		@io.sync = true if @io.class == File
-
-		@client = "localhost"
-		@loglevel = $LOGLEVELS["info"]
-	end
-
-	def timestamp
-		Time.now.strftime(@datefmt) + " " + @client + " "
-	end
-
-	def << (msg)
-		msg.each_line do |line|
-			line.chomp!
-			@io << timestamp if @datefmt
-			@io << line + "\n"
-		end
-	end
-
-	# don't add CR to message
-	def print(msg)
-		@io << msg
-	end
-
-	def printf(fmt, *args)
-		@io << sprintf(fmt, *args)
-	end
-
-	def empty
-		@io = ""
-	end
-end
-
-class Msg
-	attr_accessor :console
-	attr_accessor :syslog
-	attr_accessor :privlog
-	attr_accessor :notify
-	attr_accessor :loglevels
-	attr_accessor :loglevel
-
-	def initialize(dest=nil)
-		me=self.class.name
-
-		puts "Init #{me}: #{dest}" if @debug
-
-		@loglevel = $LOGLEVELS["info"]
-
-		@console = nil
-		@syslog = nil 
-		@privlog = nil
-		@notify = nil
-		@email = nil
-
-		@datefmt = "%b %d %H:%M:%S"
-
-		return if dest == nil
-
-		adest = dest.split(",")
-		adest.each do |d|
-			d.strip!
-			puts "Setting dest=#{d}" if @debug
-			case d
-			when 'console'
-				@console = MsgObject.new("console", $stdout, nil, true)
-			else
-				puts "Unknown log destination \"#{d}\" in #{me}"
-			end
-		end
-		# default log level
-	end
-private
-	def msgMessage(msg, lvl)
-		# console
-		# syslog
-		# private log
-		# notification
-		puts "Unknown message level=%{lvl}" if not $LOGLEVELS.has_key?(lvl)
-		return if $LOGLEVELS[lvl].to_i > @loglevel
-		msg.each_line do |line|
-			@console << line if @console
-			@notify << line if @notify
-			# only print blank lines to console
-			next if line.length == 1
-			@privlog << line if @privlog
-		end
-	end
-public
-	def set_client(client="localhost")
-		@console.client = client if @console
-		@privlog.client = client if @privlog
-		@syslog.client = client if @syslog
-		@notify.client = client if @notify
-	end
-
-	# Jan 17 09:08:33 host 
-	# %b %d %H:%M:%S hostname
-	def privlog(name, dir, perm=0644)
-		@logname = name
-		@logdir = dir
-
-		if not File.exist?(dir)
-			begin
-				FileUtils.mkdir(dir)
-			rescue Errno::EACCES
-				die "permission denied creating log dir #{dir}"
-			rescue
-				die "creating log dir #{dir}"
-			end
-		end
-		if not File.stat(dir).directory?
-			die "#{dir} is not a directory"
-		end
-
-		log = File.join(@logdir, @logname)
-		privlog = File.new(log, File::CREAT|File::APPEND|File::RDWR, perm)
-		@privlog = MsgObject.new("privlog", privlog, @datefmt, false) if privlog
-	end
-
-	def privlog_path
-		@privlog ? @privlog.io.path : ""
-	end
-
-	# email notify
-	# MsgObject.notify("me@somewhere.com", "My Name", "root@localhost", "Rubac backup")
-	def notify(to_addr, from_addr="rubac@localhost", server="localhost")
-		#@notify = MsgObject.new("notify", nil, @datefmt, false) if @notify == nil
-		@notify = MsgObject.new("notify", nil, nil, false) if @notify == nil
-
-		@email = Email.new(server)
-		@email.to(to_addr)
-		@email.from(from_addr)
-	end
-
-	def send_notify(subject="Rubac notification")
-		return if @notify == nil
-		#$msg.puts "!!!!!\nsubject=#{subject}\nbuffer=#{@notify.io}\n!!!!!"
-		return if @notify.io.class != String
-		return if @notify.io.length == 0
-		@email.send(subject, @notify.io)
-		# TODO if successful clear buffer
-		@notify.empty	
-	end
-
-	def level(lvl)
-		if $LOGLEVELS[lvl].has_key?
-			@loglevel = $LOGLEVELS[lvl]
-		else
-			@loglevel = $LOGLEVELS["info"]
-			err "Unknown log level"
-		end
-	end
-
-	def info(msg)
-		msgMessage(msg, "info")
-	end
-
-	def warn(msg)
-		msgMessage("Warning: " + msg, "warn")
-	end
-
-	def err(msg)
-		msgMessage("Error: " + msg, "err")
-	end
-
-	def debug(msg)
-		msgMessage("Debug: " + msg, "debug")
-	end
-
-	def alert(msg)
-		msgMessage("Alert: " + msg, "alert")
-	end
-
-	def die(msg, e=1)
-		err(msg)
-		exit e
-	end
-
-	def printf(fmt, *args)
-		#$stdout << sprintf(fmt, *args)
-		#@console << msg if @console
-		#@notify << msg if @notify
-		@console.printf(fmt, *args) if @console
-		@notify.printf(fmt, *args) if @notify
-	end
-
-	def puts(msg)
-		#$stdout << msg + "\n"
-		@console << msg if @console
-		@notify << msg if @notify
-	end
-
-	def print(msg)
-		@console.print(msg) if @console
-		@notify.print(msg) if @notify
-	end
-
-	def log(msg)
-		@privlog << msg if @privlog
-	end
-end
- 
+module Rubac 
+# Rubac
 #
-# rsync version must be at least 2.5.6 for --link-dest option
+# main rubac class
 #
-
-class Config_rubac
-	attr_reader :config
-
-	#
-	# configuration template hash
-	#
-	def initialize
-		@def_config = {
-			'globals' => {
-				'version' => {
-					'major' => '0',
-					'minor' => '9',
-					'revision' => "$Rev$"[6..-3]
-				},
-				'opts' => '',
-				'includes' => '',
-				'excludes' => '',
-				'dest' => '',
-				'ninc' => '5',
-				'logdir' => '',
-				'logname' => '',
-				'email' => '',
-				'smtp' => 'localhost'
-			},
-			'clients' => {
-				'localhost' => {
-					'address' => '',
-					'includes' => '',
-					'excludes' => '',
-					'opts' => '',
-					'ninc' => '5',
-					'compress' => false,
-					'incrementals' => { '0' => "" }
-				}
-			}
-		}
-		@config = {}
-		@config['globals'] = @def_config['globals']
-		@config['clients'] = {}
-	end
-
-	def version
-		@config['globals']['version']['major'] + "." +
-		@config['globals']['version']['minor'] + " " +
-		"(rev #{@config['globals']['version']['revision']})"
-	end
-
-	# set config file version to match script version, do any version
-	# checking here as well for compatibility reasons, if any
-	def align_version
-		ver = Hash.new
-		ver = @def_config['globals']['version']
-		# compare ver and @config['globals']['version'] here
-		@config['globals']['version'] = ver
-	end
-
-	def dump
-		$msg.info "YAML.dump=" + YAML.dump(@config) + "\n"
-	end
-
-	def load(file, dir)
-		input = File.join(dir, file)
-		if not File.exist?(input)
-			$msg.warn "configuraton file #{file} not found"
-			return false
-		end
-		@config = File.open(input) { |yf| YAML::load(yf) }
-		align_version
-		return true
-	end
-
-	def save_yaml(output)
-		File.open(output, "w" ) do |out|
-			YAML.dump( @config, out )
-		end
-	end
-
-	def save(file, dir)
-		output=File.join(dir, file)
-		$msg.info "Saving #{output}"
-		if output[/\.yaml$/]
-			save_yaml(output)
-		else
-			$msg.die "unknown file type #{output} in config save"
-		end
-	end
-
-	def add_client(host)
-		return if @config['clients'].has_key?(host)
-		client = Hash.new
-		client["#{host}"] = @def_config['clients']['localhost']
-		@config['clients'].merge!(client)
-	end
-
-	def del_client(host)
-		return if not @config['clients'].has_key?(host)
-		@config['clients'].delete(host)
-	end
-
-	def get_global_config
-		@config['globals'].to_hash
-	end
-
-	def del_global_key(key, val, delim=nil)
-		return if val == nil or val.length == 0
-
-		return if not @config['globals'].has_key?(key)
-
-		if not delim
-			@config['globals'].delete(key)
-			return
-		end
-
-		items = []
-		items = @config['globals']["#{key}"].split(delim)
-		return if items.length == 0
-
-		vals = val.split(delim)
-		vals.each { |k|
-			k.strip!
-			items.delete(k)
-		}
-		@config['globals']["#{key}"] = items.join(delim)
-	end
-
-	def add_global_key(key, val, delim=nil)
-		return if val == nil or val.length = 0
-
-		if not delim
-			items=@config['globals']["#{key}"] = val
-			return
-		end
-		# val can be a comma separated list, should convert to array
-		# and compare all values of the with all values in vals below
-		vals = val.split(delim)
-		vals.each { |k| k.strip! }
-		
-		items = []
-		items=@config['globals']["#{key}"].split(delim) if @config['globals']["#{key}"].length > 0
-		# merge, removing duplicates
-		items = items | vals
-		@config['globals']["#{key}"] = items.join(delim)
-	end
-
-	def global_update(cmd, key, value, delim=nil)
-		return if not value
-		value = value.to_s if value.class != String
-		case cmd
-		when UPDATE_CMD_DEL
-			msg = "Deleting"
-			del_global_key(key, value, delim)
-		when UPDATE_CMD_ADD
-			msg = "Adding"
-			add_global_key(key, value, delim)
-		else
-			$msg.err "Unknown command in global_update: #{cmd}"
-			return 1
-		end
-		$msg.info msg + " #{key}=#{value}"
-		return 0
-	end
-
-	def get_global_key_value(key, default = "")
-		if not @config['globals'].has_key?("#{key}")
-			@config['globals']["#{key}"] = default
-		end
-		@config['globals']["#{key}"]
-	end
-
-	def get_global_ninc(ninc)
-		get_global_key_value("ninc", @def_config['globals']['ninc'])
-	end
-
-	def set_global_key_value(key, value)
-		return if value == nil
-		@config['globals']["#{key}"] = value
-	end
-
-	def get_global_dest
-		@config['globals']['dest'].to_s
-	end
-
-	def get_client_config(host)
-		add_client(host) if not @config['clients'].has_key?(host)
-		@config['clients']["#{host}"]
-	end
-
-	def set_client_key_value(host, key, value)
-		get_client_config(host)
-		@config['clients']["#{host}"]["#{key}"] = value
-	end
-
-	# set the value of the incremental string (eg. rubac.2009-12-31_10:10:07.3)
-	def set_client_incremental(host, n, name)
-		get_client_config(host)
-		@config['clients']["#{host}"]['incrementals']["#{n}"] = name
-		$msg.debug "set ['clients'][#{host}]['incrementals'][#{n}]=#{name}"
-	end
-
-	def get_client_incrementals(host, n)
-		get_client_config(host)
-		if not @config['clients']["#{host}"].has_key?('incrementals')
-			$msg.debug "incrementals not found for host=#{host}"
-			@config['clients']["#{host}"]['incrementals'] = { "#{n}" => "" }
-		end
-		if not @config['clients']["#{host}"]['incrementals'].has_key?("#{n}")
-			@config['clients']["#{host}"]['incrementals']["#{n}"] = ""
-		end
-		@config['clients']["#{host}"]['incrementals']["#{n}"].to_s
-	end
-
-	def del_client_key(host, key, val, delim=nil)
-		return if val == nil or val.length == 0
-		get_client_config(host)
-
-		return if not @config['clients']["#{host}"].has_key?(key)
-
-		if not delim
-			@config['clients']["#{host}"].delete(key)
-			return
-		end
-
-		items = []
-		items = @config['clients']["#{host}"]["#{key}"].split(delim)
-		return if items.length == 0
-
-		vals = val.split(delim)
-		vals.each { |k|
-			k.strip!
-			items.delete(k)
-		}
-		@config['clients']["#{host}"]["#{key}"] = items.join(delim)
-	end
-
-	# append (or set) the specified key for the specified client
-	def add_client_key(host, key, val, delim=nil)
-		return if val == nil or val.length == 0
-
-		get_client_config(host)
-
-		if not delim
-			@config['clients']["#{host}"]["#{key}"] = val
-			return
-		end
-
-		# val can be a delimite4d separated list, should convert to array
-		# and compare all values of the with all values in vals below
-		vals = val.split(delim)
-		vals.each { |k| k.strip! }
-
-		items = []
-		if @config['clients']["#{host}"]["#{key}"].length > 0
-			items = @config['clients']["#{host}"]["#{key}"].split(delim)
-		end
-		items = items | vals
-		@config['clients']["#{host}"]["#{key}"] = items.join(delim)
-	end
-
-	# type is add/delete
-	#def client_updates(host, type, inc, exc, opts)
-	#	if type == UPDATE_CMD_DEL
-	#		del_client_key(host, "includes", inc)
-	#		del_client_key(host, "excludes", exc)
-	#		del_client_key(host, "opts", opts, " ")
-	#	else
-	#		add_client_key(host, "includes", inc)
-	#		add_client_key(host, "excludes", exc)
-	#		add_client_key(host, "opts", opts, " ")
-	#	end
-	#end
-
-	# update (add or del) a key/value setting
-	def client_update(host, cmd, key, value, delim=nil)
-		return if not value
-		value = value.to_s if value.class != String
-		case cmd
-		when UPDATE_CMD_DEL
-			msg="Deleting"
-			del_client_key(host, key, value, delim)
-		when UPDATE_CMD_ADD
-			msg="Adding"
-			add_client_key(host, key, value, delim)
-		else
-			$msg.err "Unknown command in client_update: #{cmd}"
-		end
-		$msg.info msg + " #{key}=#{value}"
-	end
-
-	def get_clients
-		@config['clients'].to_hash
-	end
-
-	# get the specified key value from globals and clients
-	# and return a comma delimited list
-	def get_client_key_list(host, key, delim=",")
-		get_client_config(host)
-
-		entries = []
-		entries = get_global_key_value(key).to_s.split(delim)
-
-		if @config['clients']["#{host}"].has_key?(key) and @config['clients']["#{host}"]["#{key}"].length > 0
-			# eliminate duplicates, if any
-			entries = entries | @config['clients']["#{host}"]["#{key}"].split(delim)
-		end
-		entries.join(delim)
-	end
-
-	def get_client_includes(host)
-		get_client_key_list(host, 'includes')
-	end
-
-	def get_client_excludes(host)
-		get_client_key_list(host, 'excludes')
-	end
-
-	def get_client_opts(host)
-		get_client_key_list(host, 'opts', " ")
-	end
-
-	def get_client_key_value(host, key)
-		get_client_config(host)
-		if not @config['clients']["#{host}"].has_key?(key)
-			@config['clients']["#{host}"]["#{key}"] = @def_config['clients']['localhost']["#{key}"]
-		end
-		@config['clients']["#{host}"]["#{key}"]
-	end
-
-	def get_client_ninc(host)
-		# TODO if client ninc is not set use global ninc
-		get_client_key_value(host, 'ninc').to_i
-	end
-
-	def get_client_address(host)
-		addr = get_client_key_value(host, 'address')
-		addr = host if addr.length == 0
-		addr = "localhost" if addr == "127.0.0.1"
-		addr
-	end
-end
-
 class Rubac
 
 	attr_reader :options
 
 	def initialize(arguments, stdin)
 
-		if ENV['RUBAC_RSYNC']
-			@rsync=ENV['RUBAC_RSYNC']
-		else
-			@rsync="rsync"
-		end
+		@rsync = ENV['RUBAC_RSYNC'] ? ENV['RUBAC_RSYNC'] : "rsync"
 
 		@includes = ""
 		@excludes = ""
@@ -886,11 +252,7 @@ class Rubac
 		#@sshopts["global"] << " --xattrs"
 
 		# use the value set in the environment, if set
-		if ENV['RSYNC_RSH']
-			@rsync_rsh = nil
-		else
-			@rsync_rsh = "-e ssh"
-		end
+		@rsync_rsh = ENV['RSYNC_RSH'] ? ENV['RSYNC_RSH'] : "-e ssh"
 
 		@arguments = arguments
 		@stdin = stdin
@@ -979,12 +341,7 @@ class Rubac
 		@options.address = nil
 		@options.search = []
 
-		@options.tmp = ENV['TMP'].to_s
-		if @options.tmp.length > 0
-			@options.tmp = ENV['TMP']
-		else
-			@options.tmp = Dir.tmpdir
-		end
+	  @options.tmp = ENV['TMP'] ? ENV['TMP'] : Dir::tmpdir
 
 		@options.restore = []
 		@options.search_restore = false
@@ -1322,7 +679,7 @@ class Rubac
 	# Setup the arguments
 	def process_arguments
 		# TO DO - place in local vars, etc
-		@config = Config_rubac.new
+		@config = Config.new
 		if not @config.load(@options.dbname, @options.datadir)
 			ans = prompt_char("Do you want to create a new profile?", "yn")
 			$msg.die "Aborting" if ans != "y"
@@ -1566,7 +923,7 @@ class Rubac
 		#}
 		
 		# create a stack to hold the last 10 lines of output
-		estack = Stack.new(10)
+		estack = Rubac::Stack.new(10)
 
 		$msg.log cmd
 		$msg.print "Backup #{@includes}\n"
@@ -2328,8 +1685,6 @@ class Rubac
 	#end
 end
 
-$msg = Msg.new("console")
-
 $signal_exit = false
 
 def trapSigTerm
@@ -2347,3 +1702,4 @@ def trapSigHup
 	$signal_exit = true
 end
 
+end
