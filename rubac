@@ -592,6 +592,14 @@ class Config_rubac
 		end
 	end
 
+	def save_json(output)
+		File.open(output, "w" ) do |out|
+			out.puts @config.to_json
+			#YAML.dump( @config, out )
+		end
+	end
+
+
 	def save(file, dir)
 		output=File.join(dir, file)
 		$msg.info "Saving #{output}"
@@ -641,7 +649,7 @@ class Config_rubac
 	end
 
 	def add_global_key(key, val, delim=nil)
-		return if val == nil or val.length = 0
+		return if val.nil? or val.empty?
 
 		if not delim
 			items=@config['globals']["#{key}"] = val
@@ -716,14 +724,15 @@ class Config_rubac
 
 	def get_client_incrementals(host, n)
 		get_client_config(host)
-		if not @config['clients']["#{host}"].has_key?('incrementals')
-			$msg.debug "incrementals not found for host=#{host}"
-			@config['clients']["#{host}"]['incrementals'] = { "#{n}" => "" }
+		host_config=@config['clients'][host]
+		unless host_config.has_key?('incrementals')
+			$msg.err "incrementals not found for host=#{host}"
+			host_config['incrementals'] = { "#{n}" => "" }
 		end
-		if not @config['clients']["#{host}"]['incrementals'].has_key?("#{n}")
-			@config['clients']["#{host}"]['incrementals']["#{n}"] = ""
+		unless host_config['incrementals'].has_key?("#{n}")
+			host_config['incrementals']["#{n}"] = ""
 		end
-		@config['clients']["#{host}"]['incrementals']["#{n}"].to_s
+		host_config['incrementals']["#{n}"].to_s
 	end
 
 	def del_client_key(host, key, val, delim=nil)
@@ -1325,7 +1334,7 @@ class Rubac
 			if ans
 				if not File.exist?(ans)
 					$msg.warn "Destination directory #{ans} not found"
-				elsif not File.lstat(ans).directory?
+				elsif not File.stat(ans).directory?
 					$msg.die "Destination #{ans} is not a directory"
 				end
 				@options.dest = ans
@@ -1461,9 +1470,9 @@ class Rubac
 			# Someone has deleted an incremental backup
 			if not File.exist?(ndest)
 				#@config.set_client_incremental(host, m, nname)
-				$msg.err "incremental backup #{nname} not found"
-				@config.set_client_incremental(host, m, "")
-				@config.set_client_incremental(host, n, "")
+				$msg.die "incremental backup #{nname} not found"
+				#@config.set_client_incremental(host, m, "")
+				#@config.set_client_incremental(host, n, "")
 				next
 			end
 
@@ -1637,7 +1646,7 @@ class Rubac
 		# must close IO to get exitstatus into $?
 		p.close
 		ret = $?.exitstatus
-		status = ret == 0 ? "Success" : "Fail"
+		status = ret == 0 || ret == 24 ? "Success" : "Fail"
 		$msg.print "\t#{status} ret=#{ret}\n"
 		if status == "Fail"
 			$msg.err "command failed #{cmd}"
@@ -1787,7 +1796,7 @@ class Rubac
 
 		rm_flags = { :force => true , :verbose => true }
 		rm_flags.merge!( :noop => true ) if @options.dry_run 
-		if status == 0
+		if status == 0 || status == 24
 			if expire and expire.length > 0 and File.exist?(expire)
 				$msg.info("deleting expired incremental: #{expire}")
 				FileUtils.rm_r(expire, rm_flags)
@@ -1800,10 +1809,10 @@ class Rubac
 			FileUtils.rm_r(bdest, rm_flags)
 		end
 
-		#if @options.dry_run and not @options.update
-		#	$msg.info "--dry-run, removing backup #{bdest}"
-		#	FileUtils.rm_r(bdest, :force => true , :verbose => true )
-		#end
+		if @options.dry_run and not @options.update
+			$msg.info "--dry-run, removing backup #{bdest}"
+			FileUtils.rm_r(bdest, :force => true , :verbose => true )
+		end
 
 		runlock.flock(File::LOCK_UN)
 		File.delete(rlock)
