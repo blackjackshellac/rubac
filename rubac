@@ -718,21 +718,48 @@ class Config_rubac
 	# set the value of the incremental string (eg. rubac.2009-12-31_10:10:07.3)
 	def set_client_incremental(host, n, name)
 		get_client_config(host)
-		@config['clients']["#{host}"]['incrementals']["#{n}"] = name
-		$msg.debug "set ['clients'][#{host}]['incrementals'][#{n}]=#{name}"
+		#@config['clients']["#{host}"]['incrementals']["#{n}"] = name
+		#$msg.debug "set ['clients'][#{host}]['incrementals'][#{n}]=#{name}"
+	end
+
+	def get_host_backups(pdest)
+		#$ ls -1 /mnt/backup/rubac/host
+		#rubac.20131115
+		#rubac.20140112
+		#
+		backup_re=/rubac\.([\d]{8})/
+
+		backups=[]
+		Dir.chdir(pdest) {
+			Dir.glob("*") { |backup|
+				next unless File.stat(backup).directory?
+				next if backup[backup_re].nil?
+				backups << backup
+			}
+			backups.sort! { |a,b|
+				a[backup_re]
+				ai=$1.to_i
+				b[backup_re]
+				bi=$1.to_i
+				bi <=> ai
+			}
+		}
+		backups
 	end
 
 	def get_client_incrementals(host, n)
 		get_client_config(host)
-		host_config=@config['clients'][host]
-		unless host_config.has_key?('incrementals')
-			$msg.err "incrementals not found for host=#{host}"
-			host_config['incrementals'] = { "#{n}" => "" }
-		end
-		unless host_config['incrementals'].has_key?("#{n}")
-			host_config['incrementals']["#{n}"] = ""
-		end
-		host_config['incrementals']["#{n}"].to_s
+		#backups=get_host_backups(host)
+		#backups[n] || ""
+		#host_config=@config['clients'][host]
+		#unless host_config.has_key?('incrementals')
+		#	$msg.err "incrementals not found for host=#{host}"
+		#	host_config['incrementals'] = { "#{n}" => "" }
+		#end
+		#unless host_config['incrementals'].has_key?("#{n}")
+		#	host_config['incrementals']["#{n}"] = ""
+		#end
+		#host_config['incrementals']["#{n}"].to_s
 	end
 
 	def del_client_key(host, key, val, delim=nil)
@@ -1426,7 +1453,6 @@ class Rubac
 	def help_command 
 		# RDoc::usage doesn't work in 1.9.x
 		#RDoc::usage('Synopsis', 'Usage', 'Options') #exits app
-		puts "Am I here?"
 		$help.print([ "Synopsis", "Usage", "Options" ])
 	end
     
@@ -1440,53 +1466,56 @@ class Rubac
 		$help.print("Examples")
 	end
  
-	def run_command_prep_linkdest(host, pdest)
-		return nil if @ninc == 0
+	def run_command_prep_linkdest(host, pdest, backups)
+		return "" if @ninc == 0
+		return "" if backups.empty?
 
 		# setup flags for delete
 		#rm_flags = { :force => true } # , :verbose => true }
 		#if @options.dry_run 
 		#	rm_flags.merge!( :noop => true )
 		#end
+		#
 
-		expire = ""
+		oldest=backups[backups.size-1]
+		expire=(backups.size < @ninc) ? "" : oldest
 
-		(1..@ninc).to_a.reverse.each do |m|
-			n = m - 1
-			# Example,
-			#   n==4, ndest is rubac.4
-			#   m==5, mdest is rubac.5
-
-			nname = @config.get_client_incrementals(host, n)
-			mname = @config.get_client_incrementals(host, m)
-
-			$msg.debug "n=#{n} nname=#{nname} m=#{m} mname=#{mname}"
-
-			next if nname.length == 0
-
-			ndest = File.join(pdest, nname)
-			mdest = File.join(pdest, mname)
-
-			# Someone has deleted an incremental backup
-			if not File.exist?(ndest)
-				#@config.set_client_incremental(host, m, nname)
-				$msg.die "incremental backup #{nname} not found"
-				#@config.set_client_incremental(host, m, "")
-				#@config.set_client_incremental(host, n, "")
-				next
-			end
-
-			if m == @ninc and mname.length > 0
-				if File.exist?(mdest)
-					#$msg.info("deleting expired incremental: #{mdest}")
-					#FileUtils.rm_r(mdest, rm_flags)
-					expire = mdest
-				end
-			end
-			if File.exist?(ndest)
-				@config.set_client_incremental(host, m, nname)
-			end
-		end
+#		(1..@ninc).to_a.reverse.each do |m|
+#			n = m - 1
+#			# Example,
+#			#   n==4, ndest is rubac.4
+#			#   m==5, mdest is rubac.5
+#
+#			nname = @config.get_client_incrementals(host, n)
+#			mname = @config.get_client_incrementals(host, m)
+#
+#			$msg.debug "n=#{n} nname=#{nname} m=#{m} mname=#{mname}"
+#
+#			next if nname.length == 0
+#
+#			ndest = File.join(pdest, nname)
+#			mdest = File.join(pdest, mname)
+#
+#			# Someone has deleted an incremental backup
+#			if not File.exist?(ndest)
+#				#@config.set_client_incremental(host, m, nname)
+#				$msg.die "incremental backup #{nname} not found"
+#				#@config.set_client_incremental(host, m, "")
+#				#@config.set_client_incremental(host, n, "")
+#				next
+#			end
+#
+#			if m == @ninc and mname.length > 0
+#				if File.exist?(mdest)
+#					#$msg.info("deleting expired incremental: #{mdest}")
+#					#FileUtils.rm_r(mdest, rm_flags)
+#					expire = mdest
+#				end
+#			end
+#			if File.exist?(ndest)
+#				@config.set_client_incremental(host, m, nname)
+#			end
+#		end
 		# return the entry to delete
 		expire
 	end
@@ -1514,7 +1543,7 @@ class Rubac
 		logf = File.join(bdest, "rubac.log.yaml")
 		if File.exist?(logf)
 			fill = false
-			log = File.open(logf) { |yf| YAML::load(yf) }
+			log = File.open(logf) { |yf| YAML::load(yf) } || []
 			$msg.log "Log found: loaded #{logf} with #{log.length}"
 		else
 			fill = true
@@ -1709,29 +1738,35 @@ class Rubac
 			return 1
 		end
 
+		pdest = get_client_dir(@client, true)
+		backups=@config.get_host_backups(pdest)
+		last_backup=backups[0] || ""
+
 		ldir = bdir = ""
 		if @options.snapshot
 			bdir = "rubac.snapshot.#{@options.snapshot}"
 			ldir = @select
-			ldir = @config.get_client_incrementals(host, 0) if not ldir
+			#ldir = @config.get_client_incrementals(host, 0) if not ldir
+			ldir=last_backup if ldir.empty?
 		elsif @options.update
-			bdir = @config.get_client_incrementals(host, 0)
+			#bdir = @config.get_client_incrementals(host, 0)
+			bdir = last_backup
 			# TODO should I set ldir for update?
 			# ldir = @config.get_client_incrementals(host, 1)
 		else
 			# if ninc == 0 do update (with delete?)
 			if @ninc == 0
-				bdir = @config.get_client_incrementals(host, 0)
+				#bdir = @config.get_client_incrementals(host, 0)
+				bdir = last_backup
 			else
 				bdir = get_backup_dirname
-				ldir = @config.get_client_incrementals(host, 0)
+				#ldir = @config.get_client_incrementals(host, 0)
+				ldir = last_backup
 			end
 		end
 
 		bdir = get_backup_dirname if bdir.length == 0
 		ldir = "__none__" if ldir.length == 0
-
-		pdest = get_client_dir(host, true)
 
 		# if flock(LOCK_EX|LOCK_NB) == false puts "cannot get exclusive lock"
 		# g=File.new("/tmp/junkol", File::CREAT|File::RDONLY, 0600)
@@ -1747,7 +1782,11 @@ class Rubac
 
 		bdest = File.join(pdest, bdir)
 		ldest = File.join(pdest, ldir)
-		$msg.debug "bdir=#{bdest} ldir=#{ldest}"
+		latest = File.join(pdest, "latest")
+		$msg.info "bdir=#{bdest} ldir=#{ldest} latest=#{latest}"
+
+		FileUtils.rm_f latest
+		FileUtils.ln_s bdest, latest
 
 		expire = ""
 		if @options.snapshot
@@ -1760,13 +1799,16 @@ class Rubac
 			ldest = nil if not File.exist?(ldest)
 		else
 			# move out incrementals
-			expire = run_command_prep_linkdest(host, pdest) if ldir != "__none__"
+			expire = run_command_prep_linkdest(host, pdest, backups) unless ldir.eql?("__none__")
+
 			# if the link destination doesn't exist, set it to nil
 			ldest = nil if not File.exist?(ldest)
 		end
 
 		# assert that bdest doesn't exist here?
 		FileUtils.mkdir_p(bdest)
+
+		$msg.debug "expire=#{expire}"
 
 		# copy previous backup log to bdest, but only if it doesn't
 		# already exist
@@ -1801,7 +1843,7 @@ class Rubac
 				$msg.info("deleting expired incremental: #{expire}")
 				FileUtils.rm_r(expire, rm_flags)
 			end
-			@config.set_client_incremental(host, 0, bdir) if not @options.snapshot
+			#@config.set_client_incremental(host, 0, bdir) if not @options.snapshot
 			@config.save(@options.dbname, @options.datadir) if not @options.dry_run
 			FileUtils.rm_r(bdest, rm_flags) if @options.dry_run
 		elsif not @options.update
@@ -1936,15 +1978,16 @@ class Rubac
 	end
 
 	def history_command_get_history(cli)
-		entries = []
-		(0..@ninc).to_a.each do |n|
-			next if @options.hist_index != nil and @options.hist_index != n
-			name = @config.get_client_incrementals(cli, n)
-			break if name.length == 0
-			entries << name
-		end
+		cdir = get_client_dir(cli, true)
+		entries=@config.get_host_backups(cdir)
 
-		cdir = get_client_dir(cli, false)
+		#(0..@ninc).to_a.each do |n|
+		#	next if @options.hist_index != nil and @options.hist_index != n
+		#	name = @config.get_client_incrementals(cli, n)
+		#	break if name.length == 0
+		#	entries << name
+		#end
+
 		return entries if not File.exist?(cdir)
 
 		Dir.chdir(cdir)
@@ -2055,11 +2098,11 @@ class Rubac
 				y = x+1
 				break if y == hist.length
 				$msg.info "#{x}:#{hist[y]}"
-				@config.set_client_incremental(host, x, hist[y])
+				#@config.set_client_incremental(host, x, hist[y])
 			end
-			@config.set_client_incremental(host, j, "")
+			#@config.set_client_incremental(host, j, "")
 		else
-			@config.set_client_incremental(host, index, "")
+			#@config.set_client_incremental(host, index, "")
 		end
 
 		accept_signals(false)
@@ -2261,7 +2304,7 @@ class Rubac
 		end if @options.select
 		@select = nil if @select and @select.length == 0
 
-		status=eval @options.cmd
+		status=send(@options.cmd)
 		status
 	end
 
@@ -2269,7 +2312,7 @@ class Rubac
 		subject = "#{@options.cmd}: #{@options.profile}:#{@options.client.join(",")}"
 		@options.client.each do |client|
 			$msg.set_client(client)
-			$msg.debug ">>>>> Running #{@options.cmd} for #{client}"
+			$msg.info ">>>>> Running #{@options.cmd} for #{client}"
 			process_command_client(client)
 			$msg.debug "<<<<< Done running #{@options.cmd} for #{client}"
 			$msg.set_client
@@ -2304,7 +2347,7 @@ class Rubac
 		when "version_command"
 			# already done above
 		when "help_command", "usage_command", "examples_command"
-			eval @options.cmd
+			send(@options.cmd)
 		when "list_command", "history_command", "search_command"
 			process_command_clients(false)
 		when "run_command", "snapshot_command", "prune_command", "restore_command"
