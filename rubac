@@ -1453,7 +1453,6 @@ class Rubac
 	def help_command 
 		# RDoc::usage doesn't work in 1.9.x
 		#RDoc::usage('Synopsis', 'Usage', 'Options') #exits app
-		puts "Am I here?"
 		$help.print([ "Synopsis", "Usage", "Options" ])
 	end
     
@@ -1783,7 +1782,11 @@ class Rubac
 
 		bdest = File.join(pdest, bdir)
 		ldest = File.join(pdest, ldir)
-		$msg.info "bdir=#{bdest} ldir=#{ldest}"
+		latest = File.join(pdest, "latest")
+		$msg.info "bdir=#{bdest} ldir=#{ldest} latest=#{latest}"
+
+		FileUtils.rm_f latest
+		FileUtils.ln_s bdest, latest
 
 		expire = ""
 		if @options.snapshot
@@ -2301,7 +2304,7 @@ class Rubac
 		end if @options.select
 		@select = nil if @select and @select.length == 0
 
-		status=eval @options.cmd
+		status=send(@options.cmd)
 		status
 	end
 
@@ -2344,7 +2347,7 @@ class Rubac
 		when "version_command"
 			# already done above
 		when "help_command", "usage_command", "examples_command"
-			eval @options.cmd
+			send(@options.cmd)
 		when "list_command", "history_command", "search_command"
 			process_command_clients(false)
 		when "run_command", "snapshot_command", "prune_command", "restore_command"
