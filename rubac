@@ -732,7 +732,12 @@ class Config_rubac
 		backups=[]
 		Dir.chdir(pdest) {
 			Dir.glob("*") { |backup|
-				next unless File.stat(backup).directory?
+				begin
+					next unless File.stat(backup).directory?
+				rescue => e
+					$msg.err "Failed to stat directory #{backup}, skipping"
+					next
+				end
 				next if backup[backup_re].nil?
 				backups << backup
 			}
@@ -919,7 +924,7 @@ class Rubac
 		@sshopts["global"] << " --relative --delete-excluded --ignore-errors --one-file-system"
 		@sshopts["restore"] << " --relative --one-file-system"
 		#@sshopts["global"] << " --acls"
-		#@sshopts["global"] << " --xattrs"
+		@sshopts["global"] << " --xattrs"
 
 		# use the value set in the environment, if set
 		if ENV['RSYNC_RSH']
@@ -1601,6 +1606,7 @@ class Rubac
 		
 		# create a stack to hold the last 10 lines of output
 		estack = Stack.new(10)
+		fstack = []
 
 		$msg.log cmd
 		$msg.print "Backup #{@includes}\n"
@@ -1619,6 +1625,9 @@ class Rubac
 			line.chop!
 
 			estack.push(line)
+			unless line[/\sfailed:/].nil?
+				fstack << line
+			end
 
 			# sent 78708 bytes  received 38072683 bytes  1956481.59 bytes/sec
 			if line =~ %r{(?:sent)(?:\s+)(\d+)(?:\s+bytes\s+received\s+)(\d+)(?:\s+bytes\s+)(\d+\.\d+)(?:\s+bytes\/sec)}
@@ -1682,6 +1691,9 @@ class Rubac
 			$msg.info " >>>> command output <<<<<"
 			estack.each do |line|
 				$msg.info " >> #{line}"
+			end
+			fstack.each do |line|
+				$msg.err " >> #{line}"
 			end
 			$msg.info " >>>>"
 		end
