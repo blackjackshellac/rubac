@@ -1684,7 +1684,7 @@ class Rubac
 		# must close IO to get exitstatus into $?
 		p.close
 		ret = $?.exitstatus
-		status = ret == 0 || ret == 24 ? "Success" : "Fail"
+		status = (ret == 0 || ret == 24 || ret == 23) ? "Success" : "Fail"
 		$msg.print "\t#{status} ret=#{ret}\n"
 		if status == "Fail"
 			$msg.err "command failed #{cmd}"
@@ -1850,7 +1850,7 @@ class Rubac
 
 		rm_flags = { :force => true , :verbose => true }
 		rm_flags.merge!( :noop => true ) if @options.dry_run 
-		if status == 0 || status == 24
+		if status == 0 || status == 24 || status == 23
 			if expire and expire.length > 0 and File.exist?(expire)
 				$msg.info("deleting expired incremental: #{expire}")
 				FileUtils.rm_r(expire, rm_flags)
