@@ -81,15 +81,14 @@ tmp="/var/tmp/rubac"
 mkdir -p $tmp
 [ $? -ne 0 ] && die 1 "Failed to create $tmp"
 
-bdir=$(rubac -l | grep "dest=" | cut -f2 -d'=')
-[ ! -d "$bdir" ] && die 1 "Backup doesn't seem to be mounted at $bdir"
+bdir="/mnt/backup/rubac"
+[ ! -f "$bdir.init" ] && die 1 "Backup doesn't seem to be mounted at $bdir"
 for c in $tclients; do
 	info "Testing client $c"
-	if [ -d "$bdir/$c" ]; then
-		latest="$bdir/$c/latest"
-		stat -L $latest > /dev/null
-		[ $? -ne 0 ] && die 1 "latest not found for client $c: $latest"
-	fi
+	[ ! -d "$bdir/$c" ] && info "Client backup not found, possibly new" && continue
+	latest="$bdir/$c/latest"
+	stat -L $latest > /dev/null
+	[ $? -ne 0 ] && die 1 "latest not found for client $c: $latest"
 	ssh -q -o "BatchMode=yes" -i ~/.ssh/id_rsa "$c" exit
 	[ $? -ne 0 ] && die 1 "ssh test to $c failed"
 done
